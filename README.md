@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Chrome-green)](https://www.google.com/chrome/)
 
-**Tekton** (formerly PHAT) is a Chrome Extension that consolidates the entire geohazard assessment workflow into a single, powerful interface. It replaces 7 fragmented browser tools with one cohesive environment.
+**Tekton** (formerly PHAT) is a Chrome Extension that consolidates the bulk of geohazard assessment workflow into a single, powerful interface. It replaces 7 fragmented browser tools with one cohesive environment.
 
 ## 🚀 Key Features
 

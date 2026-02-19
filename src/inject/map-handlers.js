@@ -326,54 +326,15 @@ window.PHAT.overlayVicinityMap = function () {
         if (!L.DragAction) console.error('L.DragAction missing');
         if (!L.ScaleAction) console.error('L.ScaleAction missing');
 
-        // Custom Opacity
-        const DiscreteOpacityAction = L.Toolbar2.Action.extend({
-            options: {
-                toolbarIcon: {
-                    html: '◐',
-                    tooltip: 'Cycle Opacity (100% -> 75% -> 50% -> 25% -> 0%)'
-                }
-            },
-            addHooks: function () {
-                const overlay = window._vicinityOverlay;
-                if (!overlay) return;
-                let current = overlay.options.opacity !== undefined ? overlay.options.opacity : 1.0;
-                let next = 1.0;
-
-                // Cycle: 1.0 -> 0.75 -> 0.5 -> 0.25 -> 0.0 -> 1.0
-                if (current > 0.76) next = 0.75;
-                else if (current > 0.51) next = 0.5;
-                else if (current > 0.26) next = 0.25;
-                else if (current > 0.01) next = 0.0;
-                else next = 1.0;
-
-                // applyOpacity is defined below in createDistortable scope; call via overlay reference
-                overlay.options.opacity = next;
-                if (typeof overlay.setOpacity === 'function') overlay.setOpacity(next);
-                const _el = overlay._image || (overlay.getElement && overlay.getElement());
-                if (_el) _el.style.opacity = next;
-
-                // Update external panel slider if it exists
-                if (window._vicinityPanel) {
-                    const slider = window._vicinityPanel.querySelector('#_vm_opacity');
-                    if (slider) {
-                        slider.value = next * 100;
-                        window._vicinityPanel.querySelector('#_vm_opacity_val').textContent = (next * 100) + '%';
-                    }
-                }
-            }
-        });
-
         const actions = [
             L.DragAction, L.ScaleAction, L.DistortAction, L.RotateAction,
-            L.FreeRotateAction, L.LockAction, DiscreteOpacityAction, L.RestoreAction, L.DeleteAction
+            L.FreeRotateAction, L.LockAction, L.RestoreAction, L.DeleteAction
         ];
 
         let overlay = L.distortableImageOverlay(imageUrl, {
             corners: corners,
             actions: actions,
-            mode: 'drag',
-            selected: true
+            mode: 'drag'
         });
 
         overlay.addTo(map);
@@ -438,13 +399,10 @@ window.PHAT.overlayVicinityMap = function () {
         map.getContainer().appendChild(panel);
         window._vicinityPanel = panel;
 
-        // Opacity helper — belt-and-suspenders: setOpacity + direct element targeting
+        // Opacity helper
         function applyOpacity(v) {
             overlay.options.opacity = v;
-            if (typeof overlay.setOpacity === 'function') overlay.setOpacity(v);
-            // Also target _image directly (distortable image may not refresh via setOpacity alone)
-            const el = overlay._image || (overlay.getElement && overlay.getElement());
-            if (el) el.style.opacity = v;
+            if (overlay._image) L.DomUtil.setOpacity(overlay._image, v);
         }
 
         // Opacity Slider

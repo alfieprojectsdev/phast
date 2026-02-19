@@ -321,6 +321,10 @@ window.PHAT.overlayVicinityMap = function () {
 
     function createDistortable(imageUrl, fileName, corners) {
         if (!map._toolbars) map._toolbars = {};
+        if (!map.doubleClickLabels && L.Map.DoubleClickLabels) {
+            map.addHandler('doubleClickLabels', L.Map.DoubleClickLabels);
+            map.doubleClickLabels.disable();
+        }
 
         // Debug: Check actions
         if (!L.DragAction) console.error('L.DragAction missing');

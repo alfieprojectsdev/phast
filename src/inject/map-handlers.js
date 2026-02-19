@@ -347,8 +347,11 @@ window.PHAT.overlayVicinityMap = function () {
                 else if (current > 0.01) next = 0.0;
                 else next = 1.0;
 
+                // applyOpacity is defined below in createDistortable scope; call via overlay reference
+                overlay.options.opacity = next;
                 if (typeof overlay.setOpacity === 'function') overlay.setOpacity(next);
-                else { overlay.options.opacity = next; if (overlay.getElement()) overlay.getElement().style.opacity = next; }
+                const _el = overlay._image || (overlay.getElement && overlay.getElement());
+                if (_el) _el.style.opacity = next;
 
                 // Update external panel slider if it exists
                 if (window._vicinityPanel) {
@@ -435,17 +438,19 @@ window.PHAT.overlayVicinityMap = function () {
         map.getContainer().appendChild(panel);
         window._vicinityPanel = panel;
 
+        // Opacity helper — belt-and-suspenders: setOpacity + direct element targeting
+        function applyOpacity(v) {
+            overlay.options.opacity = v;
+            if (typeof overlay.setOpacity === 'function') overlay.setOpacity(v);
+            // Also target _image directly (distortable image may not refresh via setOpacity alone)
+            const el = overlay._image || (overlay.getElement && overlay.getElement());
+            if (el) el.style.opacity = v;
+        }
+
         // Opacity Slider
         let opacitySlider = panel.querySelector('#_vm_opacity');
         opacitySlider.addEventListener('input', function () {
-            let v = this.value / 100;
-            // Use setOpacity if available, or options.opacity
-            if (typeof overlay.setOpacity === 'function') {
-                overlay.setOpacity(v);
-            } else {
-                overlay.options.opacity = v;
-                if (overlay.getElement()) overlay.getElement().style.opacity = v;
-            }
+            applyOpacity(this.value / 100);
             panel.querySelector('#_vm_opacity_val').textContent = this.value + '%';
         });
 
@@ -459,9 +464,7 @@ window.PHAT.overlayVicinityMap = function () {
             preBlinkOpacity = overlay.options.opacity !== undefined ? overlay.options.opacity : 0.5;
             let blinkState = false;
             blinkInterval = setInterval(() => {
-                let v = blinkState ? 0.8 : 0.2;
-                if (typeof overlay.setOpacity === 'function') overlay.setOpacity(v);
-                else { overlay.options.opacity = v; if (overlay.getElement()) overlay.getElement().style.opacity = v; }
+                applyOpacity(blinkState ? 0.8 : 0.2);
                 blinkState = !blinkState;
             }, 500);
         }
@@ -470,9 +473,7 @@ window.PHAT.overlayVicinityMap = function () {
             if (blinkInterval) {
                 clearInterval(blinkInterval);
                 blinkInterval = null;
-                // Restore
-                if (typeof overlay.setOpacity === 'function') overlay.setOpacity(preBlinkOpacity);
-                else { overlay.options.opacity = preBlinkOpacity; if (overlay.getElement()) overlay.getElement().style.opacity = preBlinkOpacity; }
+                applyOpacity(preBlinkOpacity);
             }
         }
 
@@ -507,9 +508,9 @@ window.PHAT.overlayVicinityMap = function () {
             });
         });
 
-        // Set initial opacity
-        if (typeof overlay.setOpacity === 'function') overlay.setOpacity(0.5);
-        else overlay.options.opacity = 0.5;
+        // Set initial opacity — also reapply once the image element is ready
+        applyOpacity(0.5);
+        overlay.once('load', () => applyOpacity(0.5));
 
         panel.querySelector('#_vm_close').addEventListener('click', function () {
             map.removeLayer(overlay);

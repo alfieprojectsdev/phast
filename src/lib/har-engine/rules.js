@@ -28,6 +28,9 @@ export const HAZARD_RULES_SCHEMA = {
             },
             "ground_shaking_liquefaction_combined": {
                 "text": "Ground shaking and liquefaction hazards can be mitigated by following the provisions of the National Building Code and the Structural Code of the Philippines."
+            },
+            "ground_shaking_mitigation_only": {
+                "text": "Ground shaking hazard can be mitigated by following the provisions of the National Building Code and the Structural Code of the Philippines."
             }
         },
         "active_fault": {
@@ -151,13 +154,14 @@ export const HAZARD_RULES_SCHEMA = {
                 "mayon": { "radius_km": 6.0 },
                 "pinatubo": { "radius_km": 10.0 },
                 "bulusan": { "radius_km": 4.0 },
+                "hibok-hibok": { "radius_km": 4.0 },
                 "taal": { "explanation": "Taal Volcano Island is designated as the Permanent Danger Zone of the volcano." }
             }
         },
         "lava_flow": {
             "name": "Lava Flow",
-            "explanation": "Lava flows are rivers of hot molten rock that can burn and bury land and make these lands unusable for a long period of time.",
-            "recommendation": "Avoidance is recommended for site/sites that may potentially be affected by pyroclastic density currents (PDCs) and lava flows.",
+            "explanation": "Lava flows are rivers of hot molten rock that can damage built environments and can make lands unusable for a long period of time.",
+            "recommendation": "Avoidance is recommended for sites that may potentially be affected by primary volcanic hazards, especially PDCs (pyroclastic density currents) and lava flows.",
             "policy": { "show_explanation_if_safe": false },
             "conditions": {
                 "safe": "Safe",
@@ -168,8 +172,8 @@ export const HAZARD_RULES_SCHEMA = {
         },
         "pyroclastic_density_current": {
             "name": "Pyroclastic Density Currents (PDC)",
-            "explanation": "Pyroclastic Density Currents (PDCs), such as flows, surges and base surges, are turbulent, fast-moving mixtures of volcanic fragments and gas that sweep down/away from an erupting volcano. PDCs can cause loss of life due to burning, impact force, abrasion, asphyxiation, and extreme physical injuries, and damage to agriculture, livestock, and properties.",
-            "recommendation": "Avoidance is recommended for site/sites that may potentially be affected by pyroclastic density currents (PDCs) and lava flows.",
+            "explanation": "Pyroclastic Density Currents (PDCs), such as flows, surges and base surges, are turbulent, fast-moving hot mixtures of volcanic fragments and gas that sweep down/away from an erupting volcano. PDCs can cause loss of life, extreme physical injuries, burial, and damages to agricultures, livestocks, and properties.",
+            "recommendation": "Avoidance is recommended for sites that may potentially be affected by primary volcanic hazards, especially PDCs (pyroclastic density currents) and lava flows.",
             "policy": { "show_explanation_if_safe": false },
             "conditions": {
                 "safe": "Safe",
@@ -199,7 +203,7 @@ export const HAZARD_RULES_SCHEMA = {
         },
         "lahar": {
             "name": "Lahar",
-            "explanation": "Lahars are rapidly flowing mixtures of volcanic sediment and water in rivers that can be triggered by prolonged and intense rainfall. Lahars can cause extensive damage to communities, infrastructure, and the environment, and lead to long-term flooding and sedimentation in river systems.",
+            "explanation": "Lahars are rapidly flowing mixtures of volcanic sediments and water in rivers that drain down volcanoes, typically produced by prolonged and intense rainfall. Lahars can cause extensive burial or washout of communities, physical injuries that could lead to loss of life, damages to the natural environment, agriculture, livestocks, infrastructure, properties, and long-term flooding and siltation in river systems.",
             "recommendation": "Lahar threat to people's lives can be addressed by 1) observing or implementing legal easement adjacent to river banks, as provided in existing laws, ordinances and land-use plans, and 2) community preparedness and evacuation plan. At-risk communities must learn to evacuate themselves when lahar threats are imminent.",
             "policy": { "show_explanation_if_safe": false },
             "conditions": {

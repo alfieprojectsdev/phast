@@ -50,18 +50,22 @@ export class DecisionEngine {
             if (section) sections.push(section);
         }
 
-        // 6. Ground Shaking and Liquefaction Mitigation (always common statements)
+        // 6. Ground Shaking and Liquefaction Mitigation
         const gsRules = this.schema.earthquake_rules.common?.ground_shaking || {};
         const gsText = gsRules.default || "All sites may be affected by strong ground shaking.";
+        const liqStatus = assessment.earthquake?.liquefaction;
+        const isLiqSusceptible = liqStatus && liqStatus !== "--" && !liqStatus.toLowerCase().includes("safe");
+        const mitigationText = isLiqSusceptible
+            ? this.schema.earthquake_rules['common']['ground_shaking_liquefaction_combined']['text']
+            : (this.schema.earthquake_rules['common']['ground_shaking_mitigation_only']?.['text']
+               || this.schema.earthquake_rules['common']['ground_shaking_liquefaction_combined']['text']);
         const common = [
             ExplanationRecommendation.fromParts({ explanation: gsText }),
-            ExplanationRecommendation.fromParts({
-                recommendation: this.schema.earthquake_rules['common']['ground_shaking_liquefaction_combined']['text']
-            })
+            ExplanationRecommendation.fromParts({ recommendation: mitigationText })
         ];
 
         // 7. Supersedes statement
-        const supersedes = this._getSupersedesStatement(true);
+        const supersedes = this._getSupersedesStatement(true, AssessmentCategory.EARTHQUAKE);
 
         return new HAROutput({
             category: AssessmentCategory.EARTHQUAKE,
@@ -121,13 +125,20 @@ export class DecisionEngine {
             const pdc = this._processPyroclasticFlow(assessment);
             if (pdc) sections.push(pdc);
 
+            // Pinatubo: only lahar confirmed; lava flow, ballistic, volcanic tsunami not applicable
+            const isPinatubo = volcanoName.toLowerCase().includes('pinatubo');
+
             // Lava Flow
-            const lava = this._processLavaFlow(assessment);
-            if (lava) sections.push(lava);
+            if (!isPinatubo) {
+                const lava = this._processLavaFlow(assessment);
+                if (lava) sections.push(lava);
+            }
 
             // Ballistic
-            const ballistic = this._processBallisticProjectiles(assessment);
-            if (ballistic) sections.push(ballistic);
+            if (!isPinatubo) {
+                const ballistic = this._processBallisticProjectiles(assessment);
+                if (ballistic) sections.push(ballistic);
+            }
 
             // Base Surge (schema-driven applies_to check)
             const baseSurgeRule = this.schema.volcano_rules['base_surge'];
@@ -137,9 +148,11 @@ export class DecisionEngine {
                 if (surge) sections.push(surge);
             }
 
-            // Volcanic Tsunami
-            const vTsu = this._processVolcanicTsunami(assessment);
-            if (vTsu) sections.push(vTsu);
+            // Volcanic Tsunami (not applicable for Pinatubo)
+            if (!isPinatubo) {
+                const vTsu = this._processVolcanicTsunami(assessment);
+                if (vTsu) sections.push(vTsu);
+            }
 
             // Fissure
             const fissure = this._processVolcanoFissure(assessment, volcanoName, distanceKm);
@@ -157,7 +170,7 @@ export class DecisionEngine {
         common.push(ashfallStatement);
 
         // 14. Supersedes
-        const supersedes = this._getSupersedesStatement(true);
+        const supersedes = this._getSupersedesStatement(true, AssessmentCategory.VOLCANO);
 
         // Add avoidance recommendation if not distant and hazards are present
         if (!isDistant && this._checkNeedsAvoidance(assessment)) {
@@ -516,7 +529,7 @@ export class DecisionEngine {
             volcanoName = parts.split(" Volcano")[0].trim();
         }
 
-        const explanation = `${volcanoName} Volcano is currently classified by DOST-PHIVOLCS as a potentially active volcano, which is morphologically young-looking but with no historical or analytical records of eruption, therefore, its eruptive and hazard potential is yet to be determined.`;
+        const explanation = `${volcanoName} Volcano is currently classified by DOST-PHIVOLCS as a potentially active volcano, which is morphologically young-looking but with no historical or analytical records of eruption.`;
 
         return ExplanationRecommendation.fromParts({ explanation: explanation });
     }
@@ -545,11 +558,13 @@ export class DecisionEngine {
         }
     }
 
-    _getSupersedesStatement(singleSite = true) {
-        const supersedes = this.schema.earthquake_rules.common?.supersedes || {};
+    _getSupersedesStatement(singleSite = true, category = null) {
+        const rules = (category === AssessmentCategory.VOLCANO)
+            ? (this.schema.volcano_rules.common?.supersedes || this.schema.earthquake_rules.common?.supersedes || {})
+            : (this.schema.earthquake_rules.common?.supersedes || {});
         return singleSite
-            ? (supersedes.single || "This hazard assessment supersedes any previous assessment made by this office regarding the site.")
-            : (supersedes.multiple || "This hazard assessment supersedes any previous assessment made by this office regarding the sites.");
+            ? (rules.single || "This hazard assessment supersedes any previous assessment made by this office regarding the site.")
+            : (rules.multiple || "This hazard assessment supersedes any previous assessment made by this office regarding the sites.");
     }
 
 }

@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a4a8a"/>
+      <stop offset="100%" stop-color="#091830"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="128" height="128" rx="22" ry="22" fill="url(#bg)"/>
+
+  <!-- Volcano cone (large, white) -->
+  <polygon points="64,16 102,88 26,88" fill="white" opacity="0.95"/>
+
+  <!-- Snow cap -->
+  <polygon points="64,16 74,40 64,37 54,40" fill="#ddeeff" opacity="0.6"/>
+
+  <!-- Crater glow -->
+  <circle cx="64" cy="16" r="6" fill="#FF8C00"/>
+  <circle cx="64" cy="16" r="10" fill="#FF8C00" opacity="0.3"/>
+
+  <!-- Ground bar -->
+  <rect x="20" y="87" width="88" height="4" rx="2" fill="#2a5fa8" opacity="0.7"/>
+
+  <!-- Seismic wave (smooth bezier, orange) -->
+  <path d="M10,104 C18,104 22,88 30,88 C38,88 42,120 50,120 C58,120 62,96 70,96 C78,96 82,112 90,112 C98,112 102,96 110,96 L118,96"
+        fill="none" stroke="#FF8C00" stroke-width="4"
+        stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- PHAT label -->
+  <text x="64" y="124" text-anchor="middle"
+        font-family="Arial, sans-serif"
+        font-size="9" font-weight="bold" letter-spacing="4"
+        fill="white" opacity="0.65">PHAT</text>
+</svg>

@@ -1,97 +1,65 @@
-# PHAT: PHIVOLCS Hazard Assessment Tool
+# 🌋 Tekton
+**The Unified Hazard Assessment Suite for HAS Admin**
 
-A Chrome Extension that consolidates geohazard assessment tools into a single interface for use with the HAS Admin platform.
+[![Version](https://img.shields.io/badge/version-1.0.0-blue)](https://github.com/yourusername/tekton)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Chrome-green)](https://www.google.com/chrome/)
 
-## What It Does
+**Tekton** (formerly PHAT) is a Chrome Extension that consolidates the entire geohazard assessment workflow into a single, powerful interface. It replaces 7 fragmented browser tools with one cohesive environment.
 
-PHAT replaces 7 separate browser tools (3 extensions + 4 bookmarklets) with one unified extension. It provides:
+## 🚀 Key Features
 
-- **Automatic metadata scraping** from HAS Admin request pages (Request ID, Client, Location)
-- **Standardized filename generation** for Hazard Assessment Maps based on detected hazard types
-- **Map tools** for vicinity map overlay, KML/KMZ import, and ULAP feature checking
-- **HAR report generation** from the assessment table with earthquake and volcano category support
+### 1. The Dashboard (Command Center)
+* **Auto-Scraping:** Instantly captures Request ID, Client, and Location metadata upon page load.
+* **Smart Filenaming:** Automatically generates standardized filenames based on the hazard types detected in the request.
+* **Data Portability:** One-click JSON export of all request metadata.
 
-## Installation
+### 2. Advanced Map Tools
+Injects professional GIS controls directly into the HAS Admin Leaflet map:
+* **Vicinity Overlays:** Drag, scale, and align vicinity maps with precision opacity and nudge controls.
+* **KML/KMZ Import:** Drag-and-drop boundary files directly onto the assessment map.
+* **ULAP Validation:** Instant boundary checks against ULAP features.
 
-1. Open Chrome and go to `chrome://extensions/`
-2. Enable **Developer mode** (toggle in the top-right corner)
-3. Click **Load unpacked**
-4. Select the `phat/` folder (the one containing `manifest.json`)
-5. The PHAT icon will appear in your extensions toolbar
+### 3. The Logic Engine (HAR Generator)
+A standardized reporting engine that eliminates guesswork:
+* **Earthquake & Volcano Logic:** Applies official PHIVOLCS logic rules to generate compliant text.
+* **Live Table Reading:** Reads the *current* state of your assessment table (including manual edits) to ensure reports match your findings.
+* **Documentation:** See the [Manual Logic Guide](docs/LOGIC_GUIDE.md) for the ruleset used by the engine.
 
-Pin the extension for quick access: click the puzzle piece icon in Chrome's toolbar, then click the pin next to PHAT.
+---
 
-## Usage
+## 🛠️ Installation
 
-Navigate to a request page on HAS Admin, then click the PHAT icon. The extension has four tabs:
+1.  Clone this repository:
+    ```bash
+    git clone [https://github.com/yourusername/tekton.git](https://github.com/yourusername/tekton.git)
+    ```
+2.  Open Chrome and navigate to `chrome://extensions/`.
+3.  Enable **Developer mode** (top-right toggle).
+4.  Click **Load unpacked**.
+5.  Select the `src/` folder from this repository.
 
-### Dashboard
+## ⚡ Workflow
 
-Automatically displays the current request's metadata:
-- **Request ID**, **Location**, and **Client** are scraped from the page on load
-- **Generated Filenames** are produced based on detected hazard types
-- **Copy All** copies the full metadata + filenames as JSON to your clipboard
+Tekton is designed for a **human-in-the-loop** workflow:
 
-Click **Rescan Page** if the data doesn't load or if you've navigated to a different request.
+1.  **Scan:** Open a request. Tekton scrapes metadata and pre-calculates filenames.
+2.  **Verify:** Edit the assessment table manually to remove false positives.
+3.  **Analyze:** Use the **Map Tools** to overlay vicinity maps or check boundaries.
+4.  **Generate:** Open the **Report** tab to generate the final HAR text. *Note: The engine reads your finalized/edited table, not the raw database values.*
 
-### Map Tools
+## 🧩 Supported Hazards
 
-Three tools that inject directly into the active map on the page:
+| Category | Hazards Detected |
+| :--- | :--- |
+| **Earthquake** | Active Fault, Liquefaction, EIL, Tsunami, Ground Fissure |
+| **Volcano** | Lahar, Pyroclastic Flow, Base Surge, Lava Flow, Ballistics, Volcanic Tsunami |
 
-- **Overlay Vicinity Map** — Loads the request's attached vicinity map as a draggable, scalable overlay on top of the Leaflet map. Includes opacity slider, blink tool, and nudge controls for precise alignment.
-- **Import KML/KMZ** — Opens a file picker to load KML or KMZ files onto the map as GeoJSON layers.
-- **Check Feature in ULAP** — Verifies whether drawn features intersect with the ULAP boundary.
+## 🔧 Configuration
 
-These require the map page to be fully loaded. If you see "Map handlers not loaded yet", wait a moment and try again.
+* **Filename Suffix:** Customizable in Settings (default: `ArP`). Persists across sessions.
+* **Permissions:** Requires `Active Tab` (for injection), `Storage` (for settings), and `Clipboard`.
 
-### Report
+---
 
-Generates a Hazard Assessment Report (HAR) from the assessment table on the current page:
-
-1. Select the **Category** (Earthquake or Volcano)
-2. Check or uncheck **Vicinity Map Provided** as appropriate
-3. Click **Generate Report**
-4. Review the output in the text area
-5. Click **Copy to Clipboard** to copy
-
-**Important**: The report reads the *current state* of the assessment table. If you've manually edited cells to remove false positives or refine data, those edits will be reflected in the generated report. Always generate the report *after* you've finalized your edits.
-
-### Settings
-
-- **Filename Suffix** — Sets the suffix appended to generated filenames (default: `ArP`). This persists across sessions.
-
-## Workflow
-
-The intended workflow follows a human-in-the-loop process:
-
-1. **Open a request page** on HAS Admin. PHAT automatically scrapes metadata and generates filenames (Dashboard tab).
-2. **Review and edit** the assessment table on the page as needed — remove false positives, correct values.
-3. **Use Map Tools** as needed — overlay the vicinity map for reference, import KML boundaries, check ULAP.
-4. **Generate the report** (Report tab) only after you've finalized your table edits. The report engine reads the live table state.
-
-## Supported Hazard Types
-
-The extension detects and processes the following hazard types:
-
-**Earthquake**: Active Fault, Liquefaction, Landslide (Earthquake-Induced), Tsunami, Ground Fissure
-
-**Volcano**: Lahar, Pyroclastic Flow, Base Surge, Lava Flow, Ballistic Projectiles, Volcanic Tsunami
-
-## Permissions
-
-PHAT requires the following Chrome permissions:
-- **Active Tab / Scripting** — To read page data and inject map tools
-- **Storage** — To save settings and cache scraped metadata
-- **Clipboard** — To copy filenames and reports
-
-The extension only activates on `hasadmin.phivolcs.dost.gov.ph` pages.
-
-## Troubleshooting
-
-| Issue | Solution |
-|-------|----------|
-| Dashboard shows "Scanning..." | Click Rescan Page. If the page hasn't fully loaded, wait and try again. |
-| "Error connecting..." | The content script may not have loaded. Refresh the HAS Admin page and reopen PHAT. |
-| Map tools say "not loaded yet" | The map page needs to finish loading. Wait a few seconds and retry. |
-| Report shows "No assessment table data" | Make sure you're on a request page that has an assessment table (`#assessment-grid`). |
-| Filenames look wrong | Check that the Filename Suffix in Settings matches your team's convention. |
+*Internal Tool - For PHIVOLCS HAS Admin Use Only.*

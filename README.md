@@ -1,7 +1,7 @@
 # 🌋 Tekton
 **The Unified Hazard Assessment Suite for HAS Admin**
 
-[![Version](https://img.shields.io/badge/version-1.0.0-blue)](https://github.com/yourusername/tekton)
+[![Version](https://img.shields.io/badge/version-1.0.0-blue)](https://github.com/alfieprojectsdev/phat)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Chrome-green)](https://www.google.com/chrome/)
 
@@ -32,7 +32,7 @@ A standardized reporting engine that eliminates guesswork:
 
 1.  Clone this repository:
     ```bash
-    git clone [https://github.com/yourusername/tekton.git](https://github.com/yourusername/tekton.git)
+    git clone https://github.com/alfieprojectsdev/phat.git
     ```
 2.  Open Chrome and navigate to `chrome://extensions/`.
 3.  Enable **Developer mode** (top-right toggle).

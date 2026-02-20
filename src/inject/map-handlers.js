@@ -323,6 +323,7 @@ window.PHAT.overlayVicinityMap = function () {
         if (!map._toolbars) map._toolbars = {};
         if (!map.doubleClickLabels && L.Map.DoubleClickLabels) {
             map.addHandler('doubleClickLabels', L.Map.DoubleClickLabels);
+            map.doubleClickLabels.enable(); // enabled()=true prevents library from binding deselect on map click
         }
 
         // Debug: Check actions
@@ -337,7 +338,8 @@ window.PHAT.overlayVicinityMap = function () {
         let overlay = L.distortableImageOverlay(imageUrl, {
             corners: corners,
             actions: actions,
-            mode: 'drag'
+            mode: 'drag',
+            selected: true
         });
 
         overlay.addTo(map);

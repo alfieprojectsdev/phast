@@ -301,6 +301,15 @@ window.PHAT.overlayVicinityMap = function () {
                 overlay.setCorners(newCorners);
             }
         });
+
+        // Keep the distortable toolbar persistent: override the two singleclick-deselect
+        // paths so clicking elsewhere on the map never dismisses the toolbar.
+        if (L.DistortableImageOverlay) {
+            L.DistortableImageOverlay.include({
+                _singleClickListeners: function () { /* no-op */ },
+                _singleClick:          function () { /* no-op */ }
+            });
+        }
     }
 
     function showOverlay(imageUrl, fileName) {

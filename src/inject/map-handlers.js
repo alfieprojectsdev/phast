@@ -323,7 +323,6 @@ window.PHAT.overlayVicinityMap = function () {
         if (!map._toolbars) map._toolbars = {};
         if (!map.doubleClickLabels && L.Map.DoubleClickLabels) {
             map.addHandler('doubleClickLabels', L.Map.DoubleClickLabels);
-            map.doubleClickLabels.disable();
         }
 
         // Debug: Check actions
@@ -393,15 +392,17 @@ window.PHAT.overlayVicinityMap = function () {
                 </div>
 
                 <div style="font-size:11px;color:#888;margin-bottom:8px;line-height:1.5;">
-                    <b>Toolbar modes</b> (click image to show):<br>
+                    <b>Click image</b> to show toolbar:<br>
                     Drag &bull; Scale &bull; Rotate &bull; Distort<br>
-                    Use <b>Distort</b> to warp individual corners.
+                    Use <b>Distort</b> to pin and warp individual corners.
                 </div>
                 <button id="_vm_close" style="background:#e74c3c;color:white;border:none;border-radius:4px;padding:6px 16px;cursor:pointer;width:100%;">Remove Overlay</button>
             </div>
         `;
         map.getContainer().appendChild(panel);
         window._vicinityPanel = panel;
+        L.DomEvent.disableClickPropagation(panel);
+        L.DomEvent.disableScrollPropagation(panel);
 
         // Opacity helper
         function applyOpacity(v) {

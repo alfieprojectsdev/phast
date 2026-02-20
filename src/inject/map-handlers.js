@@ -341,7 +341,7 @@ window.PHAT.overlayVicinityMap = function () {
 
         const actions = [
             L.DragAction, L.ScaleAction, L.DistortAction, L.RotateAction,
-            L.FreeRotateAction, L.LockAction, L.RestoreAction, L.DeleteAction
+            L.FreeRotateAction, L.LockAction, L.RestoreAction
         ];
 
         let overlay = L.distortableImageOverlay(imageUrl, {

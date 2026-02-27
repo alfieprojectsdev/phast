@@ -22,6 +22,10 @@ window.PHAST.overlayVicinityMap = function () {
         window._vicinityPanel.remove();
         window._vicinityPanel = null;
     }
+    if (window._stretchHandles) {
+        window._stretchHandles.forEach(h => { if (h._map) map.removeLayer(h); });
+        window._stretchHandles = null;
+    }
 
     // Find vicinity map attachments (PDF, JPG, PNG)
     let candidates = [];
@@ -312,6 +316,58 @@ window.PHAST.overlayVicinityMap = function () {
         }
     }
 
+    // --- STRETCH HANDLES ---
+    // Axis-constrained edge midpoint handles. Extend L.EditHandle so they
+    // automatically reposition via overlay.on('update') — same sync mechanism
+    // used by ScaleHandle and RotateHandle. No polling required.
+    L.StretchHandle = L.EditHandle.extend({
+
+        initialize: function (overlay, cornerA, cornerB, options) {
+            this._cornerA = cornerA;
+            this._cornerB = cornerB;
+            // L.EditHandle.initialize sets _handled, _corner, and positions
+            // the marker at cornerA. updateHandle() in onAdd corrects it.
+            L.EditHandle.prototype.initialize.call(this, overlay, cornerA, options);
+        },
+
+        updateHandle: function () {
+            var a = this._handled.getCorner(this._cornerA);
+            var b = this._handled.getCorner(this._cornerB);
+            this.setLatLng(L.latLng((a.lat + b.lat) / 2, (a.lng + b.lng) / 2));
+        },
+
+        _onHandleDrag: function () {
+            var overlay = this._handled;
+            var map = overlay._map;
+            var corners = overlay.getCorners();
+
+            // Current edge corners in layer points
+            var pA = map.latLngToLayerPoint(corners[this._cornerA]);
+            var pB = map.latLngToLayerPoint(corners[this._cornerB]);
+
+            // Old midpoint and new handle position (where user dragged to)
+            var oldMid = L.point((pA.x + pB.x) / 2, (pA.y + pB.y) / 2);
+            var newMid = map.latLngToLayerPoint(this.getLatLng());
+            var delta = newMid.subtract(oldMid);
+
+            // Unit vector perpendicular to this edge (the stretch axis)
+            var edge = pB.subtract(pA);
+            var edgeLen = Math.sqrt(edge.x * edge.x + edge.y * edge.y);
+            if (edgeLen < 1) return;
+            var perp = L.point(-edge.y / edgeLen, edge.x / edgeLen);
+
+            // Project delta onto the perpendicular — constrains drag to stretch axis
+            var proj = delta.x * perp.x + delta.y * perp.y;
+            var move = L.point(perp.x * proj, perp.y * proj);
+
+            // Translate only the two dragged-edge corners; opposite edge is the anchor
+            var newCorners = corners.slice();
+            newCorners[this._cornerA] = map.layerPointToLatLng(pA.add(move));
+            newCorners[this._cornerB] = map.layerPointToLatLng(pB.add(move));
+            overlay.setCorners(newCorners);
+        }
+    });
+
     function showOverlay(imageUrl, fileName) {
         let bounds = map.getBounds();
         let center = map.getCenter();
@@ -353,6 +409,25 @@ window.PHAST.overlayVicinityMap = function () {
 
         overlay.addTo(map);
         window._vicinityOverlay = overlay;
+
+        // Stretch handles — edge midpoints for axis-constrained H/V stretching.
+        // Corners: 0=NW, 1=NE, 2=SW, 3=SE
+        // Left edge: 0-2 | Right edge: 1-3 | Top edge: 0-1 | Bottom edge: 2-3
+        var hIcon = L.divIcon({
+            html: '<div style="width:14px;height:8px;background:#3498db;border:2px solid white;border-radius:2px;cursor:ew-resize;box-shadow:0 1px 3px rgba(0,0,0,0.4);"></div>',
+            iconSize: [14, 8], iconAnchor: [7, 4], className: ''
+        });
+        var vIcon = L.divIcon({
+            html: '<div style="width:8px;height:14px;background:#3498db;border:2px solid white;border-radius:2px;cursor:ns-resize;box-shadow:0 1px 3px rgba(0,0,0,0.4);"></div>',
+            iconSize: [8, 14], iconAnchor: [4, 7], className: ''
+        });
+        window._stretchHandles = [
+            new L.StretchHandle(overlay, 0, 2, { icon: hIcon }), // left edge
+            new L.StretchHandle(overlay, 1, 3, { icon: hIcon }), // right edge
+            new L.StretchHandle(overlay, 0, 1, { icon: vIcon }), // top edge
+            new L.StretchHandle(overlay, 2, 3, { icon: vIcon })  // bottom edge
+        ];
+        window._stretchHandles.forEach(h => h.addTo(map));
 
         // Interaction conflicts
         function disableMapInteractions() {
@@ -402,24 +477,10 @@ window.PHAST.overlayVicinityMap = function () {
                     </div>
                 </div>
 
-                <!-- Stretch Controls -->
-                <div style="margin-bottom:8px;">
-                    <div style="font-size:11px;color:#555;margin-bottom:4px;font-weight:bold;">Stretch</div>
-                    <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px;">
-                        <span style="font-size:11px;color:#888;width:14px;">H:</span>
-                        <button id="_vm_stretch_h_out" title="Wider" style="flex:1;cursor:pointer;padding:2px 0;">← →</button>
-                        <button id="_vm_stretch_h_in" title="Narrower" style="flex:1;cursor:pointer;padding:2px 0;">→ ←</button>
-                    </div>
-                    <div style="display:flex;align-items:center;gap:4px;">
-                        <span style="font-size:11px;color:#888;width:14px;">V:</span>
-                        <button id="_vm_stretch_v_out" title="Taller" style="flex:1;cursor:pointer;padding:2px 0;">↑ ↓</button>
-                        <button id="_vm_stretch_v_in" title="Shorter" style="flex:1;cursor:pointer;padding:2px 0;">↓ ↑</button>
-                    </div>
-                </div>
-
                 <div style="font-size:11px;color:#888;margin-bottom:8px;line-height:1.5;">
                     <b>Click image</b> to show toolbar:<br>
-                    Drag &bull; Scale &bull; Rotate
+                    Drag &bull; Scale &bull; Rotate<br>
+                    Drag <b>edge handles</b> to stretch H or V.
                 </div>
                 <button id="_vm_close" style="background:#e74c3c;color:white;border:none;border-radius:4px;padding:6px 16px;cursor:pointer;width:100%;">Remove Overlay</button>
             </div>
@@ -496,26 +557,6 @@ window.PHAST.overlayVicinityMap = function () {
             });
         });
 
-        // Stretch Controls
-        const STRETCH_STEP = 0.05;
-
-        function stretchH(factor) {
-            let corners = overlay.getCorners();
-            let centerLng = corners.reduce((s, c) => s + c.lng, 0) / 4;
-            overlay.setCorners(corners.map(c => L.latLng(c.lat, centerLng + (c.lng - centerLng) * factor)));
-        }
-
-        function stretchV(factor) {
-            let corners = overlay.getCorners();
-            let centerLat = corners.reduce((s, c) => s + c.lat, 0) / 4;
-            overlay.setCorners(corners.map(c => L.latLng(centerLat + (c.lat - centerLat) * factor, c.lng)));
-        }
-
-        panel.querySelector('#_vm_stretch_h_out').addEventListener('click', () => stretchH(1 + STRETCH_STEP));
-        panel.querySelector('#_vm_stretch_h_in').addEventListener('click', () => stretchH(1 - STRETCH_STEP));
-        panel.querySelector('#_vm_stretch_v_out').addEventListener('click', () => stretchV(1 + STRETCH_STEP));
-        panel.querySelector('#_vm_stretch_v_in').addEventListener('click', () => stretchV(1 - STRETCH_STEP));
-
         // Set initial opacity — also reapply once the image element is ready
         applyOpacity(0.5);
         overlay.once('load', () => applyOpacity(0.5));
@@ -523,6 +564,10 @@ window.PHAST.overlayVicinityMap = function () {
         panel.querySelector('#_vm_close').addEventListener('click', function () {
             map.removeLayer(overlay);
             panel.remove();
+            if (window._stretchHandles) {
+                window._stretchHandles.forEach(h => map.removeLayer(h));
+                window._stretchHandles = null;
+            }
             window._vicinityOverlay = null;
             window._vicinityPanel = null;
         });

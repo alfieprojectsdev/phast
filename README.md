@@ -17,7 +17,7 @@
 
 ### 2. Advanced Map Tools
 Injects professional GIS controls directly into the HAS Admin Leaflet map:
-* **Vicinity Overlays:** Drag, scale, and align vicinity maps with precision opacity and nudge controls.
+* **Vicinity Overlays:** Drag, scale, rotate, and stretch vicinity maps onto the base map. Edge handles allow independent H/V stretching along the image's own axis. Precision opacity slider, blink comparison tool, and nudge controls included.
 * **KML/KMZ Import:** Load boundary files directly onto the assessment map.
 * **ULAP Validation:** Instant boundary checks against ULAP features.
 * **Coordinate Navigation:** Parse DMS coordinates from request remarks and center the map instantly.

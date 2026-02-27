@@ -1,12 +1,12 @@
 // Map Handlers - Injected into MAIN world
 // Access to 'map', 'L', 'drawnItems'
 
-window.PHAT = window.PHAT || {};
+window.PHAST = window.PHAST || {};
 
 // --- MAP OVERLAY LOGIC ---
 // --- MAP OVERLAY LOGIC ---
-window.PHAT.overlayVicinityMap = function () {
-    console.log('PHAT: Overlaying Vicinity Map...');
+window.PHAST.overlayVicinityMap = function () {
+    console.log('PHAST: Overlaying Vicinity Map...');
 
     if (typeof map === 'undefined' || typeof L === 'undefined') {
         alert('⚠️ Leaflet map not found on this page.');
@@ -528,8 +528,8 @@ window.PHAT.overlayVicinityMap = function () {
 
 // --- KML IMPORT LOGIC ---
 // --- KML IMPORT LOGIC ---
-window.PHAT.importKML = function () {
-    console.log('PHAT: Importing KML...');
+window.PHAST.importKML = function () {
+    console.log('PHAST: Importing KML...');
     if (typeof map === 'undefined' || typeof drawnItems === 'undefined' || typeof L === 'undefined') {
         alert('⚠️ Leaflet map not found on this page.');
         return;
@@ -745,7 +745,7 @@ window.PHAT.importKML = function () {
 };
 
 // --- ULAP CHECK LOGIC ---
-window.PHAT.checkULAP = function () {
+window.PHAST.checkULAP = function () {
     try {
         const row = document.querySelector('#assessment-grid .items tbody tr');
         if (!row) throw new Error("No hazard assessment rows found.");
@@ -764,7 +764,7 @@ window.PHAT.checkULAP = function () {
 };
 
 // --- CENTER MAP TO COORDINATES ---
-window.PHAT.centerMapTo = function (lat, lon) {
+window.PHAST.centerMapTo = function (lat, lon) {
     if (typeof map === 'undefined' || typeof L === 'undefined') {
         alert('⚠️ Leaflet map not found on this page.');
         return;
@@ -773,7 +773,7 @@ window.PHAT.centerMapTo = function (lat, lon) {
 };
 
 // --- PARSE REQUEST COORDS ---
-window.PHAT.parseRequestCoords = function () {
+window.PHAST.parseRequestCoords = function () {
     if (typeof map === 'undefined' || typeof L === 'undefined') {
         alert('⚠️ Leaflet map not found on this page.');
         return;
@@ -814,7 +814,7 @@ window.PHAT.parseRequestCoords = function () {
             let row = span.closest('tr');
             let dl = row && row.querySelector("a[href*='download'], a[download]");
             if (dl) {
-                window.PHAT.importKML();
+                window.PHAST.importKML();
                 return;
             }
         }
@@ -823,4 +823,4 @@ window.PHAT.parseRequestCoords = function () {
     alert('⚠️ No coordinates or KMZ/KML files found.');
 };
 
-console.log('PHAT Map Handlers Injected');
+console.log('PHAST Map Handlers Injected');

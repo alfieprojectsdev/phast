@@ -1,5 +1,5 @@
 // Popup Logic
-console.log('PHAT Popup Loaded');
+console.log('PHAST Popup Loaded');
 
 import { generateFilenames } from '../lib/filename-generator.js';
 import { DecisionEngine } from '../lib/har-engine/engine.js';
@@ -168,10 +168,10 @@ function injectMapScript(fnName) {
             target: { tabId: tabs[0].id },
             world: 'MAIN',
             func: (name) => {
-                if (window.PHAT && typeof window.PHAT[name] === 'function') {
-                    window.PHAT[name]();
+                if (window.PHAST && typeof window.PHAST[name] === 'function') {
+                    window.PHAST[name]();
                 } else {
-                    alert('PHAT: Map handlers not loaded yet. Try again in a moment.');
+                    alert('PHAST: Map handlers not loaded yet. Try again in a moment.');
                 }
             },
             args: [fnName]
@@ -208,7 +208,7 @@ function showDiscoveryCard(result) {
                 chrome.scripting.executeScript({
                     target: { tabId: tabs[0].id },
                     world: 'MAIN',
-                    func: (lt, ln) => { if (window.PHAT && window.PHAT.centerMapTo) window.PHAT.centerMapTo(lt, ln); },
+                    func: (lt, ln) => { if (window.PHAST && window.PHAST.centerMapTo) window.PHAST.centerMapTo(lt, ln); },
                     args: [lat, lon]
                 });
             });

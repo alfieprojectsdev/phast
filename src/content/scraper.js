@@ -1,7 +1,7 @@
 // Scraper Content Script
 // Runs in ISOLATED world
 
-console.log('PHAT Scraper Loaded');
+console.log('PHAST Scraper Loaded');
 
 // Listen for messages
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -161,12 +161,12 @@ function scanCoords() {
         const metadata = extractMetadata();
         chrome.storage.session.set({ pageMetadata: metadata }, () => {
             if (chrome.runtime.lastError) {
-                console.warn('PHAT: Could not save metadata to session storage:', chrome.runtime.lastError.message);
+                console.warn('PHAST: Could not save metadata to session storage:', chrome.runtime.lastError.message);
             } else {
-                console.log('PHAT: Metadata auto-scraped and cached');
+                console.log('PHAST: Metadata auto-scraped and cached');
             }
         });
     } catch (e) {
-        console.error('PHAT: Auto-scrape failed:', e);
+        console.error('PHAST: Auto-scrape failed:', e);
     }
 })();

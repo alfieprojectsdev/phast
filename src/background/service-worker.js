@@ -2,7 +2,7 @@
 
 // Listen for installation
 chrome.runtime.onInstalled.addListener(() => {
-    console.log('PHAT Extension Installed');
+    console.log('PHAST Extension Installed');
 });
 
 // Handle messages from Popup or Content Scripts

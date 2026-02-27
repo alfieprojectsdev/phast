@@ -48,5 +48,5 @@
     });
     docObserver.observe(document.documentElement || document, { childList: true, subtree: true });
 
-    console.log('PHAT Row Click Enhancer Active');
+    console.log('PHAST Row Click Enhancer Active');
 })();

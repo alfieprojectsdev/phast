@@ -340,7 +340,7 @@ window.PHAST.overlayVicinityMap = function () {
         if (!L.ScaleAction) console.error('L.ScaleAction missing');
 
         const actions = [
-            L.DragAction, L.ScaleAction, L.DistortAction, L.RotateAction,
+            L.DragAction, L.ScaleAction, L.RotateAction,
             L.FreeRotateAction, L.LockAction, L.RestoreAction
         ];
 
@@ -402,10 +402,24 @@ window.PHAST.overlayVicinityMap = function () {
                     </div>
                 </div>
 
+                <!-- Stretch Controls -->
+                <div style="margin-bottom:8px;">
+                    <div style="font-size:11px;color:#555;margin-bottom:4px;font-weight:bold;">Stretch</div>
+                    <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px;">
+                        <span style="font-size:11px;color:#888;width:14px;">H:</span>
+                        <button id="_vm_stretch_h_out" title="Wider" style="flex:1;cursor:pointer;padding:2px 0;">← →</button>
+                        <button id="_vm_stretch_h_in" title="Narrower" style="flex:1;cursor:pointer;padding:2px 0;">→ ←</button>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:4px;">
+                        <span style="font-size:11px;color:#888;width:14px;">V:</span>
+                        <button id="_vm_stretch_v_out" title="Taller" style="flex:1;cursor:pointer;padding:2px 0;">↑ ↓</button>
+                        <button id="_vm_stretch_v_in" title="Shorter" style="flex:1;cursor:pointer;padding:2px 0;">↓ ↑</button>
+                    </div>
+                </div>
+
                 <div style="font-size:11px;color:#888;margin-bottom:8px;line-height:1.5;">
                     <b>Click image</b> to show toolbar:<br>
-                    Drag &bull; Scale &bull; Rotate &bull; Distort<br>
-                    Use <b>Distort</b> to pin and warp individual corners.
+                    Drag &bull; Scale &bull; Rotate
                 </div>
                 <button id="_vm_close" style="background:#e74c3c;color:white;border:none;border-radius:4px;padding:6px 16px;cursor:pointer;width:100%;">Remove Overlay</button>
             </div>
@@ -481,6 +495,26 @@ window.PHAST.overlayVicinityMap = function () {
                 overlay.setCorners(newCorners);
             });
         });
+
+        // Stretch Controls
+        const STRETCH_STEP = 0.05;
+
+        function stretchH(factor) {
+            let corners = overlay.getCorners();
+            let centerLng = corners.reduce((s, c) => s + c.lng, 0) / 4;
+            overlay.setCorners(corners.map(c => L.latLng(c.lat, centerLng + (c.lng - centerLng) * factor)));
+        }
+
+        function stretchV(factor) {
+            let corners = overlay.getCorners();
+            let centerLat = corners.reduce((s, c) => s + c.lat, 0) / 4;
+            overlay.setCorners(corners.map(c => L.latLng(centerLat + (c.lat - centerLat) * factor, c.lng)));
+        }
+
+        panel.querySelector('#_vm_stretch_h_out').addEventListener('click', () => stretchH(1 + STRETCH_STEP));
+        panel.querySelector('#_vm_stretch_h_in').addEventListener('click', () => stretchH(1 - STRETCH_STEP));
+        panel.querySelector('#_vm_stretch_v_out').addEventListener('click', () => stretchV(1 + STRETCH_STEP));
+        panel.querySelector('#_vm_stretch_v_in').addEventListener('click', () => stretchV(1 - STRETCH_STEP));
 
         // Set initial opacity — also reapply once the image element is ready
         applyOpacity(0.5);

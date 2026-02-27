@@ -763,8 +763,22 @@ window.PHAT.checkULAP = function () {
     }
 };
 
+// --- CENTER MAP TO COORDINATES ---
+window.PHAT.centerMapTo = function (lat, lon) {
+    if (typeof map === 'undefined' || typeof L === 'undefined') {
+        alert('⚠️ Leaflet map not found on this page.');
+        return;
+    }
+    map.setView([lat, lon], 15);
+};
+
 // --- PARSE REQUEST COORDS ---
 window.PHAT.parseRequestCoords = function () {
+    if (typeof map === 'undefined' || typeof L === 'undefined') {
+        alert('⚠️ Leaflet map not found on this page.');
+        return;
+    }
+
     function dmsToDecimal(dms) {
         let parts = dms.trim().match(/(\d+)[°º]?\s*(\d+)?['']?\s*([\d.]+)?[""]?\s*([NSEW])/i);
         if (!parts) return null;
@@ -776,12 +790,6 @@ window.PHAT.parseRequestCoords = function () {
         return /[SW]/.test(dir) ? -dec : dec;
     }
 
-    function copyToClipboard(text, label) {
-        navigator.clipboard.writeText(text)
-            .then(() => alert(`📌 ${label} copied:\n${text}`))
-            .catch(() => prompt(`📌 ${label} (copy manually):`, text));
-    }
-
     // Primary: scan Remarks column (3rd td) for DMS coordinates
     let remarks = document.querySelectorAll('td:nth-child(3)');
     for (let td of remarks) {
@@ -791,13 +799,14 @@ window.PHAT.parseRequestCoords = function () {
             let lat = dmsToDecimal(match[1]),
                 lon = dmsToDecimal(match[2]);
             if (lat !== null && lon !== null) {
-                copyToClipboard(`${lat}, ${lon}`, 'Coordinates');
+                map.setView([lat, lon], 15);
+                alert(`📍 Map centered on:\n${lat.toFixed(6)}, ${lon.toFixed(6)}`);
                 return;
             }
         }
     }
 
-    // Fallback: copy first KMZ/KML download link
+    // Fallback: import first KMZ/KML found on the page
     let spans = document.querySelectorAll('span.text-primary');
     for (let span of spans) {
         let name = span.innerText.toLowerCase();
@@ -805,8 +814,7 @@ window.PHAT.parseRequestCoords = function () {
             let row = span.closest('tr');
             let dl = row && row.querySelector("a[href*='download'], a[download]");
             if (dl) {
-                let link = dl.href.startsWith('http') ? dl.href : location.origin + dl.getAttribute('href');
-                copyToClipboard(link, 'KMZ/KML download link');
+                window.PHAT.importKML();
                 return;
             }
         }

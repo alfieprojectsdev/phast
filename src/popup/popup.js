@@ -85,6 +85,7 @@ function fetchMetadata() {
     chrome.storage.session.get(['pageMetadata'], (stored) => {
         if (stored.pageMetadata && stored.pageMetadata.requestId) {
             handleMetadata(stored.pageMetadata);
+            scanAndShowDiscovery();
             return;
         }
 
@@ -101,6 +102,7 @@ function fetchMetadata() {
 
                 if (response) {
                     handleMetadata(response);
+                    scanAndShowDiscovery();
                 }
             });
         });
@@ -175,6 +177,50 @@ function injectMapScript(fnName) {
             args: [fnName]
         });
     });
+}
+
+function scanAndShowDiscovery() {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (!tabs[0]) return;
+        chrome.tabs.sendMessage(tabs[0].id, { action: 'SCAN_COORDS' }, (result) => {
+            if (chrome.runtime.lastError || !result || (!result.coords && !result.kml)) return;
+            showDiscoveryCard(result);
+        });
+    });
+}
+
+function showDiscoveryCard(result) {
+    const card = document.getElementById('discovery-card');
+    const content = document.getElementById('discovery-content');
+    const actions = document.getElementById('discovery-actions');
+    card.style.display = '';
+
+    if (result.coords) {
+        const { lat, lon } = result.coords;
+        content.textContent = `📍 ${lat.toFixed(5)}°N, ${lon.toFixed(5)}°E`;
+        actions.innerHTML = `
+            <button class="primary-btn" id="disc-center">Center Map</button>
+            <button class="secondary-btn" id="disc-copy-coords">Copy</button>
+        `;
+        document.getElementById('disc-center').addEventListener('click', () => {
+            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                if (!tabs[0]) return;
+                chrome.scripting.executeScript({
+                    target: { tabId: tabs[0].id },
+                    world: 'MAIN',
+                    func: (lt, ln) => { if (window.PHAT && window.PHAT.centerMapTo) window.PHAT.centerMapTo(lt, ln); },
+                    args: [lat, lon]
+                });
+            });
+        });
+        document.getElementById('disc-copy-coords').addEventListener('click', () => {
+            navigator.clipboard.writeText(`${lat}, ${lon}`).catch(() => {});
+        });
+    } else if (result.kml) {
+        content.textContent = `📂 ${result.kml.name}`;
+        actions.innerHTML = `<button class="primary-btn" id="disc-import">Import to Map</button>`;
+        document.getElementById('disc-import').addEventListener('click', () => injectMapScript('importKML'));
+    }
 }
 
 function generateReport() {

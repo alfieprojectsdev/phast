@@ -203,3 +203,20 @@ button {
     color: #7f8c8d;
     margin-top: 0;
 }
+
+/* Discovery card */
+.discovery-value {
+    font-size: 0.9rem;
+    color: #2c3e50;
+    margin-bottom: 8px;
+    word-break: break-all;
+}
+
+.discovery-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.discovery-actions button {
+    flex: 1;
+}

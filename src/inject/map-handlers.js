@@ -314,59 +314,52 @@ window.PHAST.overlayVicinityMap = function () {
                 _singleClick:          function () { /* no-op */ }
             });
         }
+
+        // --- STRETCH HANDLES ---
+        // Defined here (post-load) so L.EditHandle is available.
+        // Axis-constrained edge midpoint handles that reposition automatically
+        // via overlay.on('update') — the same sync mechanism as ScaleHandle.
+        L.StretchHandle = L.EditHandle.extend({
+
+            initialize: function (overlay, cornerA, cornerB, options) {
+                this._cornerA = cornerA;
+                this._cornerB = cornerB;
+                L.EditHandle.prototype.initialize.call(this, overlay, cornerA, options);
+            },
+
+            updateHandle: function () {
+                var a = this._handled.getCorner(this._cornerA);
+                var b = this._handled.getCorner(this._cornerB);
+                this.setLatLng(L.latLng((a.lat + b.lat) / 2, (a.lng + b.lng) / 2));
+            },
+
+            _onHandleDrag: function () {
+                var overlay = this._handled;
+                var map = overlay._map;
+                var corners = overlay.getCorners();
+
+                var pA = map.latLngToLayerPoint(corners[this._cornerA]);
+                var pB = map.latLngToLayerPoint(corners[this._cornerB]);
+
+                var oldMid = L.point((pA.x + pB.x) / 2, (pA.y + pB.y) / 2);
+                var newMid = map.latLngToLayerPoint(this.getLatLng());
+                var delta = newMid.subtract(oldMid);
+
+                var edge = pB.subtract(pA);
+                var edgeLen = Math.sqrt(edge.x * edge.x + edge.y * edge.y);
+                if (edgeLen < 1) return;
+                var perp = L.point(-edge.y / edgeLen, edge.x / edgeLen);
+
+                var proj = delta.x * perp.x + delta.y * perp.y;
+                var move = L.point(perp.x * proj, perp.y * proj);
+
+                var newCorners = corners.slice();
+                newCorners[this._cornerA] = map.layerPointToLatLng(pA.add(move));
+                newCorners[this._cornerB] = map.layerPointToLatLng(pB.add(move));
+                overlay.setCorners(newCorners);
+            }
+        });
     }
-
-    // --- STRETCH HANDLES ---
-    // Axis-constrained edge midpoint handles. Extend L.EditHandle so they
-    // automatically reposition via overlay.on('update') — same sync mechanism
-    // used by ScaleHandle and RotateHandle. No polling required.
-    L.StretchHandle = L.EditHandle.extend({
-
-        initialize: function (overlay, cornerA, cornerB, options) {
-            this._cornerA = cornerA;
-            this._cornerB = cornerB;
-            // L.EditHandle.initialize sets _handled, _corner, and positions
-            // the marker at cornerA. updateHandle() in onAdd corrects it.
-            L.EditHandle.prototype.initialize.call(this, overlay, cornerA, options);
-        },
-
-        updateHandle: function () {
-            var a = this._handled.getCorner(this._cornerA);
-            var b = this._handled.getCorner(this._cornerB);
-            this.setLatLng(L.latLng((a.lat + b.lat) / 2, (a.lng + b.lng) / 2));
-        },
-
-        _onHandleDrag: function () {
-            var overlay = this._handled;
-            var map = overlay._map;
-            var corners = overlay.getCorners();
-
-            // Current edge corners in layer points
-            var pA = map.latLngToLayerPoint(corners[this._cornerA]);
-            var pB = map.latLngToLayerPoint(corners[this._cornerB]);
-
-            // Old midpoint and new handle position (where user dragged to)
-            var oldMid = L.point((pA.x + pB.x) / 2, (pA.y + pB.y) / 2);
-            var newMid = map.latLngToLayerPoint(this.getLatLng());
-            var delta = newMid.subtract(oldMid);
-
-            // Unit vector perpendicular to this edge (the stretch axis)
-            var edge = pB.subtract(pA);
-            var edgeLen = Math.sqrt(edge.x * edge.x + edge.y * edge.y);
-            if (edgeLen < 1) return;
-            var perp = L.point(-edge.y / edgeLen, edge.x / edgeLen);
-
-            // Project delta onto the perpendicular — constrains drag to stretch axis
-            var proj = delta.x * perp.x + delta.y * perp.y;
-            var move = L.point(perp.x * proj, perp.y * proj);
-
-            // Translate only the two dragged-edge corners; opposite edge is the anchor
-            var newCorners = corners.slice();
-            newCorners[this._cornerA] = map.layerPointToLatLng(pA.add(move));
-            newCorners[this._cornerB] = map.layerPointToLatLng(pB.add(move));
-            overlay.setCorners(newCorners);
-        }
-    });
 
     function showOverlay(imageUrl, fileName) {
         let bounds = map.getBounds();

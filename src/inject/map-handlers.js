@@ -763,4 +763,56 @@ window.PHAT.checkULAP = function () {
     }
 };
 
+// --- PARSE REQUEST COORDS ---
+window.PHAT.parseRequestCoords = function () {
+    function dmsToDecimal(dms) {
+        let parts = dms.trim().match(/(\d+)[°º]?\s*(\d+)?['']?\s*([\d.]+)?[""]?\s*([NSEW])/i);
+        if (!parts) return null;
+        let deg = parseFloat(parts[1] || 0),
+            min = parseFloat(parts[2] || 0),
+            sec = parseFloat(parts[3] || 0);
+        let dir = parts[4].toUpperCase();
+        let dec = deg + (min / 60) + (sec / 3600);
+        return /[SW]/.test(dir) ? -dec : dec;
+    }
+
+    function copyToClipboard(text, label) {
+        navigator.clipboard.writeText(text)
+            .then(() => alert(`📌 ${label} copied:\n${text}`))
+            .catch(() => prompt(`📌 ${label} (copy manually):`, text));
+    }
+
+    // Primary: scan Remarks column (3rd td) for DMS coordinates
+    let remarks = document.querySelectorAll('td:nth-child(3)');
+    for (let td of remarks) {
+        let text = td.innerText.replace(/\s+/g, ' ').trim();
+        let match = text.match(/(\d{1,3}[°º]?\s*\d{1,2}['']?\s*[\d.]+[""]?\s*[NS])[,;\s]+(\d{1,3}[°º]?\s*\d{1,2}['']?\s*[\d.]+[""]?\s*[EW])/i);
+        if (match) {
+            let lat = dmsToDecimal(match[1]),
+                lon = dmsToDecimal(match[2]);
+            if (lat !== null && lon !== null) {
+                copyToClipboard(`${lat}, ${lon}`, 'Coordinates');
+                return;
+            }
+        }
+    }
+
+    // Fallback: copy first KMZ/KML download link
+    let spans = document.querySelectorAll('span.text-primary');
+    for (let span of spans) {
+        let name = span.innerText.toLowerCase();
+        if (name.endsWith('.kmz') || name.endsWith('.kml')) {
+            let row = span.closest('tr');
+            let dl = row && row.querySelector("a[href*='download'], a[download]");
+            if (dl) {
+                let link = dl.href.startsWith('http') ? dl.href : location.origin + dl.getAttribute('href');
+                copyToClipboard(link, 'KMZ/KML download link');
+                return;
+            }
+        }
+    }
+
+    alert('⚠️ No coordinates or KMZ/KML files found.');
+};
+
 console.log('PHAT Map Handlers Injected');

@@ -30,6 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-overlay-map').addEventListener('click', () => injectMapScript('overlayVicinityMap'));
     document.getElementById('btn-import-kml').addEventListener('click', () => injectMapScript('importKML'));
     document.getElementById('btn-check-ulap').addEventListener('click', () => injectMapScript('checkULAP'));
+    document.getElementById('btn-parse-coords').addEventListener('click', () => injectMapScript('parseRequestCoords'));
 
     document.getElementById('btn-gen-report').addEventListener('click', generateReport);
 

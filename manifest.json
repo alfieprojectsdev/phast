@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "PHAT: Phivolcs Hazard Assessment Tool",
+  "name": "PHAST: PHIVOLCS Hazard Assessment Support Tool",
   "version": "1.0.0",
-  "description": "Unified Geohazard Assessment Tool combining maps, reporting, and data scraping.",
+  "description": "Hazard assessment support tool for PHIVOLCS HAS Admin: map tools, report generation, and workflow automation.",
   "permissions": [
     "activeTab",
     "scripting",

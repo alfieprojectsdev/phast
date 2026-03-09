@@ -64,4 +64,55 @@ PHAST is designed for a **human-in-the-loop** workflow:
 
 ---
 
+## 📐 Logic Engine — Doc-to-Code Mapping
+
+The HAR engine (`src/lib/har-engine/`) is kept in sync with two human-readable reference documents in `docs/`. When either document is updated, the corresponding engine locations must be reviewed.
+
+### `docs/LOGIC_GUIDE.md` → Engine
+
+| LOGIC_GUIDE.md section | Engine location | What it governs |
+| :--- | :--- | :--- |
+| Part 1 — Universal Boilerplate | `rules.js` → `earthquake_rules.common.intro`, `volcano_rules.common.intro`, `common.supersedes` | Intro and supersedes statement templates |
+| Part 2A — Active Fault | `rules.js` → `earthquake_rules.active_fault` | Status templates, explanation, recommendation, 5 m buffer policy |
+| Part 2B — EIL | `rules.js` → `earthquake_rules.earthquake_induced_landslide` | Conditions, explanation, recommendation; GEP thresholds in `gep_thresholds` sub-object |
+| Part 2B — Tsunami | `rules.js` → `earthquake_rules.tsunami.conditions` | `prone`, `low_lying_coastal_ew`, `no_data_low_lying_coastal` (no-map coastal fallback) |
+| Part 2C — Liquefaction | `rules.js` → `earthquake_rules.liquefaction` | Standard conditions; GMMA-READY terminology in `gmma_ready_conditions`; `_isLiqSusceptible()` in `engine.js` controls mitigation text selection |
+| Part 2D — Ground Shaking | `rules.js` → `earthquake_rules.common.ground_shaking` | Default and Palawan/Sulu variants |
+| Part 3, Step 1 — 50 km Gatekeeper | `engine.js` → `processVolcanoAssessment()` line: `isDistant` | Combines `distanceKm > 50` with `outside_watershed` flag from `models.js:VolcanoAssessment` |
+| Part 3, Step 1 — Island Exception | `rules.js` → `volcano_rules.distance_rules.outside_safe_zone_island`; `engine.js` → `is_island_volcano` branch | Shorter "erupted products" text for Biliran, Hibok-Hibok, etc. |
+| Part 3, Step 1b — AV vs PAV Conflict | `engine.js` → PAV block in `processVolcanoAssessment()` | Parses PAV distance via `_parseVolcanoText()`; VOOD note injected when PAV is nearer |
+| Part 3, Step 2 — PDZ Check | `rules.js` → `volcano_rules.pdz_danger_zone`; `engine.js` → `_processPdz()` | Radius lookup, Pinatubo/Taal special cases, `no_pdz_within_10km` fallback |
+| Part 3, Step 3 — Volcano Silent-if-Safe | `rules.js` → `volcano_rules.lahar`, `pyroclastic_density_current`, `lava_flow`, `ballistic_projectiles`, `volcanic_tsunami` | Explanation and recommendation strings; `policy.show_explanation_if_safe` flag |
+| Part 3, Step 3 — Volcanic Tsunami | `rules.js` → `volcano_rules.volcanic_tsunami.recommendation` | Includes three natural tsunami signs |
+| Part 3, Step 4 — Ashfall | `rules.js` → `volcano_rules.common.ashfall` | Universal ashfall template |
+| Part 4, §1 — Taal | `rules.js` → `volcano_rules.pdz_danger_zone.special_cases.taal`, `volcano_rules.base_surge` | PDZ island text, base surge applies_to |
+| Part 4, §1b — Fissures (Muntinlupa) | `rules.js` → `earthquake_rules.fissure.trigger`; `engine.js` → `_processEarthquakeFissure()` | 1 km trigger enforced via `fissure_distance_m` in `models.js:EarthquakeAssessment` |
+| Part 4, §2 — Pinatubo | `rules.js` → `volcano_rules.pdz_danger_zone.conditions.pinatubo_*`; `engine.js` → `isPinatubo` guard | "10-kilometer danger zone" phrasing; lahar zone (1–5) system |
+| Part 4, §3 — Mayon | `rules.js` → `volcano_rules.lahar.conditions` | Highly/Moderately/Least Prone category labels |
+| Part 4, §4 — PAV definition | `engine.js` → `_getPavStatement()` | PAV boilerplate text (hardcoded in method body) |
+
+### `docs/VOLCANO_HAZARD_STATUS.md` → Engine
+
+| VOLCANO_HAZARD_STATUS.md section | Engine location | What it governs |
+| :--- | :--- | :--- |
+| Part 1 — Standard-Format Volcanoes | No engine code — assessor reference only | Which AVs have current maps; engine does not gate on map availability |
+| Part 1 — Legacy-Format Volcanoes (PDZ radii) | `rules.js` → `volcano_rules.pdz_danger_zone.special_cases` | Kanlaon/Bulusan/Hibok-Hibok = 4 km, Mayon = 6 km, Pinatubo = 10 km |
+| Part 1 — No-Map Volcanoes (ETR) | No engine code — assessor reference only | Bud Dajo, Makaturing, Musuan: defer assessment; not encoded in engine |
+| Part 2 — PAV map status (Mahagnao, Apo) | No engine code — assessor reference only | Engine processes whatever status the assessor enters |
+| Part 3 — NVTA Inclusion Rules (VTS) | `rules.js` → `volcano_rules.volcanic_tsunami.applies_to`; `engine.js` → `_processVolcanicTsunami()` and Pinatubo guard | VTS rendered only for applicable volcanoes |
+| Part 3 — NVTA Inclusion Rules (BS, VFI) | `rules.js` → `volcano_rules.base_surge.applies_to`, `volcano_rules.fissure` | Taal-specific hazards |
+| Part 4 — PDZ Formatting Rules | `rules.js` → `volcano_rules.pdz_danger_zone.conditions` (pinatubo_*, taal special_case, no_pdz_within_10km) | Exact phrases enforced via schema; engine selects by volcano name match |
+| Part 5 — Pinatubo special rules | `engine.js` → `isPinatubo` guard; `rules.js` → `pdz_danger_zone.conditions.pinatubo_*` | Skips LV, BP, VTS for Pinatubo; uses lahar zone 1–5 conditions |
+| Part 5 — Taal special rules | `rules.js` → `pdz_danger_zone.special_cases.taal`, `base_surge`, `volcanic_tsunami.applies_to` | Island PDZ text; base surge and fissure sections activated |
+
+### Key Model Fields
+
+| Field | Model | Purpose |
+| :--- | :--- | :--- |
+| `fissure_distance_m` | `EarthquakeAssessment` | Enforces 1 km fissure trigger (Taal, Muntinlupa) |
+| `outside_watershed` | `VolcanoAssessment` | Activates distant gatekeeper regardless of km distance |
+| `is_island_volcano` | `VolcanoAssessment` | Selects shorter island-exception text when site is distant |
+
+---
+
 *Internal Tool — For PHIVOLCS HAS Admin Use Only.*

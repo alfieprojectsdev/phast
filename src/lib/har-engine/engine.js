@@ -54,7 +54,7 @@ export class DecisionEngine {
         const gsRules = this.schema.earthquake_rules.common?.ground_shaking || {};
         const gsText = gsRules.default || "All sites may be affected by strong ground shaking.";
         const liqStatus = assessment.earthquake?.liquefaction;
-        const isLiqSusceptible = liqStatus && liqStatus !== "--" && !liqStatus.toLowerCase().includes("safe");
+        const isLiqSusceptible = this._isLiqSusceptible(liqStatus);
         const mitigationText = isLiqSusceptible
             ? this.schema.earthquake_rules['common']['ground_shaking_liquefaction_combined']['text']
             : (this.schema.earthquake_rules['common']['ground_shaking_mitigation_only']?.['text']
@@ -102,12 +102,16 @@ export class DecisionEngine {
             common.push(nearestStatement);
         }
 
-        // 3. Check Distance Rule (>50km)
-        const isDistant = distanceKm > 50.0;
+        // 3. Check Distance Rule (>50km or outside watershed)
+        const isDistant = distanceKm > 50.0 || assessment.volcano.outside_watershed === true;
 
         if (isDistant) {
-            // INJECT PREAMBLE: Replaces specific hazard sections
-            const preambleText = this.schema.volcano_rules['distance_rules']['outside_safe_zone']['explanation'];
+            // INJECT PREAMBLE: Replaces specific hazard sections.
+            // Island volcanoes (e.g. Biliran, Hibok-Hibok) use a shorter variant.
+            const distantRules = this.schema.volcano_rules['distance_rules'];
+            const preambleText = assessment.volcano.is_island_volcano
+                ? (distantRules['outside_safe_zone_island']?.explanation || distantRules['outside_safe_zone']['explanation'])
+                : distantRules['outside_safe_zone']['explanation'];
             common.push(ExplanationRecommendation.fromParts({ explanation: preambleText }));
         }
 
@@ -159,10 +163,26 @@ export class DecisionEngine {
             if (fissure) sections.push(fissure);
         }
 
-        // 12. PAV (Potentially Active Volcano)
+        // 12. PAV (Potentially Active Volcano) — AV vs PAV conflict rules
         if (assessment.volcano.nearest_pav && assessment.volcano.nearest_pav !== "--") {
-            const pavStatement = this._getPavStatement(assessment.volcano.nearest_pav);
-            common.push(pavStatement);
+            const pavInfo = this._parseVolcanoText(assessment.volcano.nearest_pav);
+            const pavDistanceKm = pavInfo.distance;
+            const bothWithin50 = pavDistanceKm < 50.0 && distanceKm < 50.0;
+            const pavIsNearer  = pavDistanceKm < distanceKm;
+
+            // Rule: if PAV is nearer than AV (both < 50 km) → assess both + flag VOOD.
+            // Rule: if AV is nearer (both < 50 km) → AV only, skip PAV.
+            // Rule: if both > 50 km → AV only (already handled by isDistant above).
+            if (bothWithin50 && pavIsNearer) {
+                common.push(this._getPavStatement(assessment.volcano.nearest_pav));
+                common.push(ExplanationRecommendation.fromParts({
+                    recommendation: "The Potentially Active Volcano is nearer to the site than the Active Volcano. Please consult the Volcano Officer of the Day (VOOD) for further guidance before issuing this assessment."
+                }));
+            } else if (!bothWithin50 && pavDistanceKm < 50.0) {
+                // Edge case: PAV < 50 km but AV > 50 km — include PAV assessment.
+                common.push(this._getPavStatement(assessment.volcano.nearest_pav));
+            }
+            // else: AV is nearer or both > 50 km — PAV not assessed.
         }
 
         // 13. Ashfall (Always included)
@@ -236,6 +256,11 @@ export class DecisionEngine {
         const status = assessment.earthquake.fissure;
         if (!status || status === "--") return null;
 
+        // Enforce the 1 km trigger declared in the schema. If the distance is known
+        // and exceeds 1 000 m, suppress the section entirely (not within trigger range).
+        const distM = assessment.earthquake.fissure_distance_m;
+        if (distM !== null && distM !== undefined && distM > 1000) return null;
+
         const rule = this.schema.earthquake_rules['fissure'];
         const expRec = ExplanationRecommendation.fromParts({
             explanation: rule.explanation,
@@ -282,25 +307,17 @@ export class DecisionEngine {
         );
     }
 
-    _parseNearestVolcano(assessment) {
-        const text = assessment.volcano.nearest_active_volcano || "";
-        // Python regex: r"Approximately\s+([\d.]+)\s*(?:km|kilometers)\s+(\w+)\s+of\s+(.+?)\s+Volcano"
+    _parseVolcanoText(text) {
         const pattern = /Approximately\s+([\d.]+)\s*(?:km|kilometers)\s+(\w+)\s+of\s+(.+?)\s+Volcano/i;
-        const match = text.match(pattern);
-
+        const match = (text || "").match(pattern);
         if (match) {
-            return {
-                distance: parseFloat(match[1]),
-                direction: match[2],
-                name: match[3]
-            };
-        } else {
-            return {
-                distance: 0.0,
-                direction: 'unknown',
-                name: 'Unknown Volcano'
-            };
+            return { distance: parseFloat(match[1]), direction: match[2], name: match[3] };
         }
+        return { distance: 0.0, direction: 'unknown', name: 'Unknown Volcano' };
+    }
+
+    _parseNearestVolcano(assessment) {
+        return this._parseVolcanoText(assessment.volcano.nearest_active_volcano || "");
     }
 
     _processPdz(assessment, volcanoName, distanceKm) {
@@ -339,6 +356,11 @@ export class DecisionEngine {
             }
 
             if (radiusKm === null) {
+                // Generic fallback: no specific PDZ radius configured but site is close.
+                const fallback = rule.conditions.no_pdz_within_10km;
+                if (fallback && distanceKm < 10) {
+                    return [ExplanationRecommendation.fromParts({ explanation: fallback })];
+                }
                 return [];
             }
 
@@ -556,6 +578,15 @@ export class DecisionEngine {
         } catch (e) {
             return false;
         }
+    }
+
+    _isLiqSusceptible(liqStatus) {
+        if (!liqStatus || liqStatus === "--") return false;
+        const s = liqStatus.toLowerCase();
+        if (s.includes("safe")) return false;
+        // GMMA-READY: "Low Potential" is treated as non-susceptible for mitigation text.
+        if (s.includes("low potential")) return false;
+        return true;
     }
 
     _getSupersedesStatement(singleSite = true, category = null) {

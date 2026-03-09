@@ -3,6 +3,8 @@
 *Distilled from: DOST-PHIVOLCS Status of Volcano-related Hazard Information/Maps, 15 March 2024.*
 *Use this alongside [LOGIC_GUIDE.md](LOGIC_GUIDE.md) when generating volcano HAR reports.*
 
+> **Map Inventory (as of March 2024):** Of the 105 total active volcano hazard maps, **25 are in the standard format** and **23 are in the legacy (not standard) format**. The following AVs have legacy maps pending final relayout: **Bulusan, Iriga, Kanlaon, Mayon, Pinatubo, and Taal**.
+
 ---
 
 ## Hazard Map Type Codes
@@ -64,7 +66,7 @@ These 9 AVs have hazard maps, but not yet in the NVTA standard format. Map years
 | **Bulusan** | PDC (2016), LHR (2016), LV (2016), TEP (2010); PDZ = 4 km | 4 km PDZ radius |
 | **Cabalian** | Legacy format | Refer to source maps |
 | **Hibok-Hibok** | PDC (1988), LHR (1988), LV (1988), BP (2023) | 4 km PDZ radius; BP map updated 2023 |
-| **Iriga** | PDC (2023), LHR (1999), VTS (2023) | VTS applicable; no LV or BP maps on record |
+| **Iriga** | PDC (2023), LHR (1999), VTS (2023) | VTS applicable; no LV or BP maps on record. Legacy Danger Zone data from 1999 is available. |
 | **Kanlaon** | Legacy format | 4 km PDZ radius |
 | **Mayon** | Legacy format | 6 km PDZ radius; lahar uses Highly/Moderately/Least Prone categories |
 | **Pinatubo** | LHR (2022), Radial Distance (2021) | See **Pinatubo Special Rules** below |
@@ -92,9 +94,10 @@ PAVs are morphologically young-looking volcanoes with **no historical or documen
 
 | Category | Volcanoes |
 | :--- | :--- |
-| **Has hazard maps** | **Mahagnao** — PDC, LHR (2022) |
-| **Ongoing qualitative assessment** | **Apo**, **Natib** |
-| **No maps** | All other 24 PAVs |
+| **Has hazard maps** | **Mahagnao** — PDC, LHR (2022). Note: lahar channels are reflected in the geodatabase, but HASAdmin currently outputs **PDC only** for Mahagnao assessments. |
+| **Preliminary maps** | **Apo** — PDC and Lava Flow (2019 preliminary). Formalized qualitative maps targeted for June 2024. |
+| **Ongoing qualitative assessment** | **Natib** |
+| **No maps** | All other 23 PAVs |
 
 > **HAR Text for PAVs (no maps):**
 > *"[Name] Volcano is currently classified by DOST-PHIVOLCS as a potentially active volcano... morphologically young-looking but with no historical or analytical records of eruption."*
@@ -127,9 +130,21 @@ Per the NVTA framework (slide 20 of the source presentation), the following gove
 
 ---
 
-## Part 4: Per-Volcano Special Rules
+## Part 4: PDZ Formatting Rules
 
-These expand on LOGIC_GUIDE.md Part 4 ("Red Flags").
+Exact phrasing matters. Do not paraphrase.
+
+| Volcano | Required PDZ Phrase |
+| :--- | :--- |
+| **Pinatubo** | *"10-kilometer danger zone"* — do **not** say "PDZ" or "Permanent Danger Zone" |
+| **Taal** | *"Taal Volcano Island is designated as the Permanent Danger Zone of the volcano."* — do **not** use a radius |
+| **Any AV with no delineated PDZ, site within ~10 km** | *"The site is within the delineated 10-kilometer radius of the volcano and is considered as highly prone to eruptive processes and products in the event of an eruption."* |
+
+---
+
+## Part 5: Per-Volcano Special Rules
+
+These expand on LOGIC_GUIDE.md Part 4 ("Red Flags"). See also Part 4 of this document for PDZ phrasing rules.
 
 ### Pinatubo
 
@@ -138,7 +153,7 @@ These expand on LOGIC_GUIDE.md Part 4 ("Red Flags").
 | Hazard | Status | HAR Action |
 | :--- | :--- | :--- |
 | **LHR** | ✅ Published (2022) | Use Pinatubo Lahar Zone system (Zones 1–5) — NOT Prone/Safe |
-| **PDC (PF)** | Ongoing qualitative | Assess if data is present; otherwise defer |
+| **PDC (PF)** | Ongoing qualitative | Assess if data is present; otherwise defer. Legacy 1996 map data from *Fire and Mud* exists but is not the current standard. |
 | **LV** | To verify | **Skip** — no finalized map |
 | **BP** | To verify | **Skip** — no finalized map |
 | **VTS** | Not applicable | **Skip** — always |
@@ -185,7 +200,7 @@ These expand on LOGIC_GUIDE.md Part 4 ("Red Flags").
 
 ### Iriga
 
-**Status:** Legacy — mixed map years.
+**Status:** Legacy — mixed map years. Legacy Danger Zone boundary data from 1999 is available as reference.
 
 | Hazard | Status | HAR Action |
 | :--- | :--- | :--- |

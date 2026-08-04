@@ -22,7 +22,14 @@ Injects professional GIS controls directly into the HAS Admin Leaflet map:
 * **ULAP Validation:** Instant boundary checks against ULAP features.
 * **Coordinate Navigation:** Parse DMS coordinates from request remarks and center the map instantly.
 
-### 3. The Logic Engine (HAR Generator)
+### 3. EIL Analysis Integration
+
+Sends the drawn parcel boundary directly to the local [EIL-Viz](https://github.com/alfieprojectsdev/eil-viz) / [EIL-Calc](https://github.com/alfieprojectsdev/eil-calc) stack for slope stability and depositional hazard analysis:
+
+* **Server health check:** Before opening EIL-Viz, PHAST probes the server's `/readyz` endpoint. Because eil-calc and eil-viz are served from a single origin, this is one check rather than two — and it reports whether the server can actually *assess* (is the DEM readable?), not merely whether a port is open. A 503 is surfaced with the server's own reason.
+* **Automatic polygon handoff:** The drawn parcel polygon is extracted from the map, base64-encoded, and passed to EIL-Viz as a `?geo=` query parameter.
+
+### 4. The Logic Engine (HAR Generator)
 A standardized reporting engine that eliminates guesswork:
 * **Earthquake & Volcano Logic:** Applies official PHIVOLCS logic rules to generate compliant text.
 * **Live Table Reading:** Reads the *current* state of your assessment table (including manual edits) to ensure reports match your findings.
@@ -60,7 +67,38 @@ PHAST is designed for a **human-in-the-loop** workflow:
 ## 🔧 Configuration
 
 * **Filename Suffix:** Customizable in Settings (default: `ArP`). Persists across sessions.
-* **Permissions:** Requires `Active Tab` (for injection), `Storage` (for settings), and `Clipboard`.
+* **EIL server URL:** Auto-detected; leave blank in Settings unless the deployment moves. See below.
+* **Permissions:** Requires `Active Tab` (for injection), `Storage` (for settings), `Clipboard`, and `host_permissions` for the EIL server hosts (needed to probe `/readyz` from the popup).
+
+## ⛰️ EIL Analysis — where the server lives
+
+EIL analysis runs on a **shared server**, not on your own machine. You do not need to start
+anything locally.
+
+PHAST finds it automatically, trying these in order and using the first that responds:
+
+1. `http://eil.phivolcs.dost.gov.ph` — the DNS name, once created
+2. `http://gps3.local:8080` — mDNS; works on clients that resolve `.local`
+3. `http://192.168.48.98:8080` — the raw LAN address; always works on the network
+
+That ordering means the address can move up the list without anyone reconfiguring anything.
+If you need to override it — a test instance, or a relocated deployment — set
+**Settings → EIL server URL**. An explicit value disables auto-detection entirely, so a typo
+fails visibly instead of silently falling back to a different server.
+
+If none respond, you are most likely off the PHIVOLCS network.
+
+### Running the stack locally (developers only)
+
+```bash
+# Terminal 1 — eil-calc API
+cd packages/eil-calc && uv run uvicorn api:app --host 127.0.0.1 --port 8000 --reload
+
+# Terminal 2 — eil-viz frontend (proxies /api to the above)
+cd packages/eil-viz && npm run dev
+```
+
+Then set **Settings → EIL server URL** to `http://localhost:5173`.
 
 ---
 

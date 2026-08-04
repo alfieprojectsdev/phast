@@ -835,6 +835,14 @@ window.PHAST.checkULAP = function () {
     }
 };
 
+// --- GET DRAWN GEOJSON (for EIL-Viz handoff) ---
+window.PHAST.getDrawnGeoJSON = function () {
+    if (typeof drawnItems === 'undefined') return null;
+    const geojson = drawnItems.toGeoJSON();
+    if (!geojson.features || geojson.features.length === 0) return null;
+    return JSON.stringify(geojson);
+};
+
 // --- CENTER MAP TO COORDINATES ---
 window.PHAST.centerMapTo = function (lat, lon) {
     if (typeof map === 'undefined' || typeof L === 'undefined') {

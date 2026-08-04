@@ -9,6 +9,51 @@ import { Assessment, AssessmentCategory, Coordinate, FeatureType } from '../lib/
 let _currentMetadata = null;
 let _currentFilenames = [];
 
+// Where the EIL stack is served. eil-calc and eil-viz sit behind one origin:
+// `/` is the eil-viz bundle, `/api/` proxies to eil-calc.
+//
+// Tried in order, most durable first, because the address is mid-migration:
+//   1. the DNS name, once MIS creates the A record (survives everything)
+//   2. mDNS — works today on clients that resolve .local; survives an IP change
+//   3. the raw IP — always works on the LAN, but breaks if the host is renumbered
+//
+// Whichever answers first is used, so no assessor has to be told to change
+// anything as the deployment moves up that list. An explicit setting overrides
+// the whole probe.
+const DEFAULT_EIL_CANDIDATES = [
+    'http://eil.phivolcs.dost.gov.ph',
+    'http://gps3.local:8080',
+    'http://192.168.48.98:8080',
+];
+
+const _stripSlash = u => u.trim().replace(/\/+$/, '');
+
+/**
+ * Resolve which EIL base URL to use.
+ *
+ * An explicit Settings value wins outright — if someone typed an address, a
+ * silent fallback to a different server would be worse than a clear failure.
+ * Otherwise probe the candidates in parallel and take the first that is ready,
+ * in preference order rather than whichever wins the race.
+ *
+ * @returns {Promise<{base: string|null, tried: string[]}>}
+ */
+async function _resolveEilBase() {
+    const res = await new Promise(resolve =>
+        chrome.storage.local.get(['eilBaseUrl'], resolve)
+    );
+    if (res.eilBaseUrl && res.eilBaseUrl.trim()) {
+        return { base: _stripSlash(res.eilBaseUrl), tried: [] };
+    }
+
+    const cands = DEFAULT_EIL_CANDIDATES.map(_stripSlash);
+    // 1.5 s each: this runs on every use, and an unreachable name should not
+    // stall the popup while the others are still viable.
+    const results = await Promise.all(cands.map(c => _probeEil(c, 1500)));
+    const idx = results.findIndex(r => r.ready);
+    return { base: idx === -1 ? null : cands[idx], tried: cands };
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     // Tab Navigation
     const tabs = document.querySelectorAll('.tab-btn');
@@ -32,6 +77,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-check-ulap').addEventListener('click', () => injectMapScript('checkULAP'));
     document.getElementById('btn-parse-coords').addEventListener('click', () => injectMapScript('parseRequestCoords'));
 
+    document.getElementById('btn-send-eil').addEventListener('click', sendToEILViz);
     document.getElementById('btn-gen-report').addEventListener('click', generateReport);
 
     document.getElementById('setting-suffix').addEventListener('input', (e) => {
@@ -39,9 +85,16 @@ document.addEventListener('DOMContentLoaded', () => {
         fetchMetadata();
     });
 
+    document.getElementById('setting-eil-base').addEventListener('input', (e) => {
+        chrome.storage.local.set({ eilBaseUrl: e.target.value });
+    });
+
     // Load settings
-    chrome.storage.local.get(['hamSuffix'], (res) => {
+    chrome.storage.local.get(['hamSuffix', 'eilBaseUrl'], (res) => {
         if (res.hamSuffix) document.getElementById('setting-suffix').value = res.hamSuffix;
+        // Left blank when unset, so the placeholder advertises auto-detection.
+        // Pre-filling a candidate would silently pin the extension to it.
+        document.getElementById('setting-eil-base').value = res.eilBaseUrl || '';
     });
 
     // Copy Report Listener
@@ -221,6 +274,125 @@ function showDiscoveryCard(result) {
         actions.innerHTML = `<button class="primary-btn" id="disc-import">Import to Map</button>`;
         document.getElementById('disc-import').addEventListener('click', () => injectMapScript('importKML'));
     }
+}
+
+async function sendToEILViz() {
+    const btn = document.getElementById('btn-send-eil');
+    const statusEl = document.getElementById('eil-status');
+
+    // Step 1: get drawn GeoJSON from the map page
+    const tabs = await new Promise(resolve =>
+        chrome.tabs.query({ active: true, currentWindow: true }, resolve)
+    );
+    if (!tabs[0]) return;
+
+    const results = await new Promise(resolve =>
+        chrome.scripting.executeScript({
+            target: { tabId: tabs[0].id },
+            world: 'MAIN',
+            func: () => window.PHAST && window.PHAST.getDrawnGeoJSON
+                ? window.PHAST.getDrawnGeoJSON()
+                : null
+        }, resolve)
+    );
+
+    if (chrome.runtime.lastError || !results || !results[0] || !results[0].result) {
+        alert('PHAST: No drawn polygon found on the map. Draw or import a parcel boundary first.');
+        return;
+    }
+
+    const geoJson = results[0].result;
+
+    // Step 2: one readiness check. eil-calc and eil-viz share an origin now, so
+    // a single probe covers both — and /readyz answers the question that
+    // actually matters ("can it assess?"), not just "is a port open".
+    _setEILStatus(statusEl, 'checking', 'Locating EIL server…');
+    btn.disabled = true;
+
+    const { base, tried } = await _resolveEilBase();
+
+    if (!base) {
+        btn.disabled = false;
+        const esc0 = s => String(s).replace(/[&<>"]/g, c =>
+            ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+        _setEILStatus(statusEl, 'error', `
+            <div class="eil-status-item">
+                <strong>⚠ Cannot reach the EIL server</strong>
+                <div class="eil-detail">Tried: ${tried.map(t => `<code>${esc0(t)}</code>`).join(', ')}</div>
+                <div class="eil-detail">Check that you are on the PHIVOLCS network. If the
+                server has moved, set its address in <strong>Settings → EIL server URL</strong>.</div>
+            </div>`);
+        return;
+    }
+
+    const health = await _probeEil(base);
+
+    btn.disabled = false;
+
+    if (health.ready) {
+        _setEILStatus(statusEl, '', '');
+        const encoded = btoa(unescape(encodeURIComponent(geoJson)));
+        window.open(`${base}/?geo=${encoded}`, '_blank');
+        return;
+    }
+
+    // Step 3: not usable — say which of the two failure modes it is. These are
+    // server-side problems; nothing the assessor can fix from their own machine.
+    const esc = s => String(s).replace(/[&<>"]/g, c =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+    const html = health.reachable
+        ? `<div class="eil-status-item">
+               <strong>⚠ EIL server is not ready</strong>
+               <div class="eil-detail">${esc(health.reason || 'Readiness check failed.')}</div>
+               <div class="eil-detail">The server at <code>${esc(base)}</code> is running but
+               cannot serve assessments. Report this to whoever maintains it.</div>
+           </div>`
+        : `<div class="eil-status-item">
+               <strong>⚠ Cannot reach the EIL server</strong>
+               <div class="eil-detail">No response from <code>${esc(base)}</code>.</div>
+               <div class="eil-detail">Check that you are on the PHIVOLCS network. If the
+               address is wrong, correct it in <strong>Settings → EIL server URL</strong>.</div>
+           </div>`;
+
+    _setEILStatus(statusEl, 'error', html);
+}
+
+/**
+ * Probe the EIL deployment's readiness endpoint.
+ *
+ * Uses a real (non-opaque) fetch: `host_permissions` covers this origin, so the
+ * extension is exempt from CORS and can read the JSON body — which is the point,
+ * since /readyz reports *why* it is not ready.
+ *
+ * @returns {Promise<{reachable: boolean, ready: boolean, reason?: string}>}
+ */
+async function _probeEil(base, timeoutMs = 3000) {
+    try {
+        const res = await fetch(`${base}/readyz`, { signal: AbortSignal.timeout(timeoutMs) });
+        if (res.ok) return { reachable: true, ready: true };
+
+        // 503 carries {"status":"not ready","reason":"..."}; 502 from the proxy
+        // means the backend is down behind a running nginx and has no JSON body.
+        let reason = `Server responded ${res.status}.`;
+        try {
+            const body = await res.json();
+            if (body && body.reason) reason = body.reason;
+        } catch {
+            if (res.status === 502 || res.status === 504) {
+                reason = 'The assessment API is not running behind the web server.';
+            }
+        }
+        return { reachable: true, ready: false, reason };
+    } catch {
+        return { reachable: false, ready: false };
+    }
+}
+
+function _setEILStatus(el, cls, html) {
+    el.className = 'eil-status' + (cls ? ` ${cls}` : '');
+    el.innerHTML = html;
+    el.style.display = html ? '' : 'none';
 }
 
 function generateReport() {

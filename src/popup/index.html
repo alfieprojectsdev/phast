@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PHAT</title>
+    <title>PHAST</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>PHAT</h1>
+            <h1>PHAST</h1>
             <span class="version">v1.0</span>
         </header>
 
@@ -77,6 +77,12 @@
                     </button>
                 </div>
             </div>
+            <div class="card">
+                <h3>EIL Analysis</h3>
+                <p class="hint">Send the drawn parcel polygon directly to EIL-Viz for slope and depositional hazard analysis.</p>
+                <button id="btn-send-eil" class="primary-btn">⛰️ Send to EIL-Viz</button>
+                <div id="eil-status" class="eil-status" style="display:none"></div>
+            </div>
         </div>
 
         <div class="tab-content" id="report">
@@ -106,6 +112,12 @@
                 <div class="field-group">
                     <label>Filename Suffix</label>
                     <input type="text" id="setting-suffix" placeholder="e.g. ArP">
+                </div>
+                <div class="field-group">
+                    <label>EIL server URL</label>
+                    <input type="text" id="setting-eil-base" placeholder="auto-detect (leave blank)">
+                    <small class="field-hint">Where eil-viz and the assessment API are
+                    served. Change only if the deployment moves.</small>
                 </div>
             </div>
         </div>

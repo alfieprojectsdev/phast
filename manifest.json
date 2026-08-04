@@ -53,7 +53,8 @@
     {
       "resources": [
         "src/inject/map-handlers.js",
-        "src/inject/leaflet-loader.js"
+        "src/inject/leaflet-loader.js",
+        "src/vendor/*"
       ],
       "matches": [
         "https://hasadmin.phivolcs.dost.gov.ph/*",

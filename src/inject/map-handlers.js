@@ -3,6 +3,23 @@
 
 window.PHAST = window.PHAST || {};
 
+// Base URL of the extension package, e.g. "chrome-extension://<id>/".
+//
+// Third-party libraries are vendored under src/vendor/ rather than pulled from
+// unpkg/cdnjs at runtime, because the PHIVOLCS LAN may have no egress — a CDN
+// script tag there fails or hangs the whole action awaiting timeout.
+//
+// This file runs in the MAIN world, where chrome.runtime.getURL is unavailable.
+// But the loader injected it via chrome.runtime.getURL, so its own <script src>
+// is already an absolute chrome-extension:// URL — the base is derivable from
+// it without any cross-world messaging. Captured at top level while
+// document.currentScript is still valid.
+window.PHAST.extBase = window.PHAST.extBase || (function () {
+    const marker = 'src/inject/map-handlers.js';
+    const src = document.currentScript && document.currentScript.src;
+    return src && src.includes(marker) ? src.slice(0, src.indexOf(marker)) : '';
+})();
+
 // --- MAP OVERLAY LOGIC ---
 // --- MAP OVERLAY LOGIC ---
 window.PHAST.overlayVicinityMap = function () {
@@ -163,7 +180,8 @@ window.PHAST.overlayVicinityMap = function () {
                 return;
             }
 
-            const repo = 'https://unpkg.com/leaflet-distortableimage@0.21.9';
+            // Vendored copy of leaflet-distortableimage@0.21.9 (see extBase above).
+            const repo = `${window.PHAST.extBase}src/vendor/leaflet-distortableimage`;
             const cssFiles = ['vendor.css', 'leaflet.distortableimage.css'];
 
             // Load CSS
@@ -171,7 +189,7 @@ window.PHAST.overlayVicinityMap = function () {
                 if (!document.querySelector(`link[href*="${file}"]`)) {
                     let css = document.createElement('link');
                     css.rel = 'stylesheet';
-                    css.href = `${repo}/dist/${file}`;
+                    css.href = `${repo}/${file}`;
                     document.head.appendChild(css);
                 }
             });
@@ -208,8 +226,8 @@ window.PHAST.overlayVicinityMap = function () {
                 });
             };
 
-            loadScript(`${repo}/dist/vendor.js`)
-                .then(() => loadScript(`${repo}/dist/leaflet.distortableimage.js`))
+            loadScript(`${repo}/vendor.js`)
+                .then(() => loadScript(`${repo}/leaflet.distortableimage.js`))
                 .then(() => {
                     console.log('✅ Distortable Image Library Loaded');
                     patchDistortableClasses();
@@ -571,9 +589,9 @@ window.PHAST.overlayVicinityMap = function () {
             // Need to load PDF.js first if not loaded (simpler to rely on internal logic or add alert in V1)
             // But let's assume it's loaded by the main branch block for now or add a quick loader check
             let s = document.createElement('script');
-            s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+            s.src = `${window.PHAST.extBase}src/vendor/pdfjs/pdf.min.js`;
             s.onload = function () {
-                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                pdfjsLib.GlobalWorkerOptions.workerSrc = `${window.PHAST.extBase}src/vendor/pdfjs/pdf.worker.min.js`;
                 renderPdf(url, name);
             };
             document.head.appendChild(s);
@@ -748,7 +766,7 @@ window.PHAST.importKML = function () {
                     }
 
                     let s = document.createElement('script');
-                    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+                    s.src = `${window.PHAST.extBase}src/vendor/jszip/jszip.min.js`;
                     s.onload = () => {
                         JSZip.loadAsync(buf).then(zip => {
                             let kmlFile = Object.keys(zip.files).find(f => f.toLowerCase().endsWith('.kml'));

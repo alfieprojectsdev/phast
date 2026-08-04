@@ -77,7 +77,13 @@ export const HAZARD_RULES_SCHEMA = {
                     "template": "Prone; Transected by a mapped fissure at the {portion} portion of the property"
                 }
             },
-            "trigger": "only_if_within_1km_of_mapped_fissure"
+            "trigger": "only_if_within_1km_of_mapped_fissure",
+            "special_cases": {
+                "muntinlupa": {
+                    "reporting": "Stakeholders are advised to report to the Institute fissures that may be observed in Muntinlupa that need to be reflected in the fissure map.",
+                    "municipalities": ["MUNTINLUPA"]
+                }
+            }
         },
         "liquefaction": {
             "name": "Liquefaction",
@@ -249,11 +255,27 @@ export const HAZARD_RULES_SCHEMA = {
         "fissure": {
             "name": "Fissure (Volcano-Related)",
             "explanation": "Volcanic fissures identified are based on results from detailed field investigations. Hazard assessment may change as DOST-PHIVOLCS scientists gather more information on fissure occurrences.",
+            "development": "Fissures may develop further if the condition that generated them persists, as a response to geological processes.",
             "recommendation": "For land-use planning and disaster risk reduction purposes, at least 5 meters on both sides of the fissure or at the edge of the deformation zone may be considered as a Zone of Avoidance.",
             "policy": { "show_explanation_if_safe": true },
+            "trigger": "site_within_50km_or_watershed",
             "conditions": {
                 "safe": "Approximately {distance} kilo/meters {direction} of a mapped fissure",
                 "transected": "Prone; Transected at the {portion} portion by a mapped fissure"
+            },
+            "special_cases": {
+                "taal": {
+                    "reporting": "Stakeholders are advised to report to the Institute fissures that may be observed at Taal Volcano and vicinity that need to be reflected in the fissure map.",
+                    "municipalities": [
+                        "AGONCILLO",
+                        "LEMERY",
+                        "TAAL",
+                        "TALISAY",
+                        "TANAUAN",
+                        "SAN NICOLAS"
+                    ],
+                    "fracture_zone_note": "Furthermore, the site is within the Taal fracture zone."
+                }
             }
         }
     },

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "PHAST: PHIVOLCS Hazard Assessment Support Tool",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAmTYGByWcOUhTB0dY3nC2BKKlgbcR97XovEOFMIl1IkItpDkrQYAd4pk0b8KKZFe7fG6tvvGjsZ4HW4rEV+Dwmgs5Hu2B1e4Ie6XX2yMmFRBBoNQALulDRy0eK+GgzWFLswW1LD46zMKE33ubY6aqAIuX3g2vWTsbHYPS7UxDbY88zAeS+6NSxefVyXq66QskbDBQHIQM1Dj4AQ716Q0O4LldEqoN87wpd6dkE4W9tCChw8MPfNQ3LSdf6xuC4cbolhk0fErqBejoPD6VyEaM5mkDuSpU5VULzkZ3k6TNDya9c04wGLUhstNh5EWomH80KBcsdZZihhsu99BpiZ0lZQIDAQAB",
   "description": "Hazard assessment support tool for PHIVOLCS HAS Admin: map tools, report generation, and workflow automation.",
   "permissions": [

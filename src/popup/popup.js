@@ -451,6 +451,9 @@ function generateReport() {
                     vicinityMapProvided: document.getElementById('report-vicinity-map').checked,
                     outsideWatershed: document.getElementById('report-outside-watershed').checked,
                     isIslandVolcano: document.getElementById('report-island-volcano').checked,
+                    avHasHazardMap: !document.getElementById('report-av-no-map').checked,
+                    pavHasHazardMap: document.getElementById('report-pav-map').checked,
+                    siteLocation: _currentMetadata?.location || '',
                 });
 
                 const engine = new DecisionEngine(HAZARD_RULES_SCHEMA);
@@ -472,6 +475,7 @@ function generateReport() {
                             text += `Recommendation: ${section.explanation_recommendation.recommendation}\n`;
                         }
                     }
+                    (section.notes || []).forEach(note => { text += `Note: ${note}\n`; });
                     text += "\n";
                 });
 

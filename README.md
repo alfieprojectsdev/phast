@@ -55,7 +55,7 @@ On any HAS Admin table with the `items` class, clicking a row toggles that row's
 5. Click "Load unpacked" and select the folder that contains `manifest.json`. If extracting created a folder inside your folder, pick the inner one.
 6. Optionally, pin PHAST from the puzzle-piece menu next to the address bar so its icon stays visible.
 
-To update, download the new `phast.zip`, extract it over the same folder (replace the existing files), then click the reload arrow on PHAST's card in `chrome://extensions/`. Your settings carry over.
+To update, download the new `phast.zip`, delete everything inside your PHAST folder, extract the new zip into the same folder, then click the reload arrow on PHAST's card in `chrome://extensions/`. Emptying the folder first stops files from an older release lingering. Your settings carry over.
 
 If you installed PHAST before its first release (from a Git clone or GitHub's Download ZIP), remove that copy in `chrome://extensions/` first, then follow the steps above. Releases have a fixed extension ID, which older copies don't, so the filename suffix and EIL server URL reset once and need setting again.
 

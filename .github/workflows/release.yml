@@ -39,6 +39,10 @@ jobs:
               ...Object.values(m.icons),
               ...Object.values(m.action.default_icon),
               ...m.content_scripts.flatMap(c => c.js),
+              // map-handlers.js reaches the page only through this list. Globs
+              // like src/vendor/* are checked as their directory.
+              ...m.web_accessible_resources.flatMap(w => w.resources)
+                .map(p => p.replace(/\/\*$/, '')),
             ];
             const missing = paths.filter(p => !fs.existsSync(p));
             if (missing.length) { console.error('Missing: ' + missing.join(', ')); process.exit(1); }

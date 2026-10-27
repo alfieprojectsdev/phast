@@ -1,6 +1,8 @@
 // src/lib/har-engine/engine.js
 import { AssessmentCategory, HAROutput, HARSection, ExplanationRecommendation } from './models.js';
 
+const VOLCANO_TEXT_HINT = 'Expected text like "Approximately 12.3 km northeast of Taal Volcano".';
+
 export class DecisionEngine {
     constructor(schema) {
         this.schema = schema;
@@ -89,18 +91,21 @@ export class DecisionEngine {
         // 1. Intro
         const intro = this._getIntroStatement(assessment);
 
-        // 2. Nearest Volcano Info
+        // 2. Nearest Volcano Info. Every gate below keys off this distance, so an
+        // unreadable cell is an error, not a guess: reading it as 0 km put the
+        // site inside every gate and named the volcano "Unknown Volcano".
         const volcanoInfo = this._parseNearestVolcano(assessment);
-        const volcanoName = volcanoInfo.name || 'Unknown';
-        const distanceKm = volcanoInfo.distance || 0.0;
+        if (!volcanoInfo) {
+            throw new Error(`Could not read the nearest active volcano cell: "${assessment.volcano.nearest_active_volcano || ''}". ${VOLCANO_TEXT_HINT}`);
+        }
+        const volcanoName = volcanoInfo.name;
+        const distanceKm = volcanoInfo.distance;
+        const warnings = [];
 
         // Add "X Volcano is the nearest..."
-        if (volcanoName !== 'Unknown') {
-            const nearestStatement = ExplanationRecommendation.fromParts({
-                explanation: this.schema.volcano_rules['common']['nearest_volcano']['single'].replace('{volcano_name}', volcanoName)
-            });
-            common.push(nearestStatement);
-        }
+        common.push(ExplanationRecommendation.fromParts({
+            explanation: this.schema.volcano_rules['common']['nearest_volcano']['single'].replace('{volcano_name}', volcanoName)
+        }));
 
         // 3. Check Distance Rule (>50km or outside watershed)
         const isDistant = distanceKm > 50.0 || assessment.volcano.outside_watershed === true;
@@ -145,27 +150,34 @@ export class DecisionEngine {
             }
 
             // Base Surge (schema-driven applies_to check)
-            const baseSurgeRule = this.schema.volcano_rules['base_surge'];
-            const baseSurgeAppliesTo = baseSurgeRule?.applies_to || [];
-            if (baseSurgeAppliesTo.some(v => volcanoName.toLowerCase().includes(v.toLowerCase()))) {
+            if (this._appliesTo('base_surge', volcanoName)) {
                 const surge = this._processBaseSurge(assessment);
                 if (surge) sections.push(surge);
             }
 
-            // Volcanic Tsunami (not applicable for Pinatubo)
-            if (!isPinatubo) {
-                const vTsu = this._processVolcanicTsunami(assessment);
-                if (vTsu) sections.push(vTsu);
+            // Volcanic Tsunami and Fissure: also gated by applies_to, but a status
+            // the assessor entered is never dropped silently. The list may lag
+            // behind the maps, so the assessor gets a warning to check.
+            const gated = [
+                ['volcanic_tsunami', isPinatubo ? null : this._processVolcanicTsunami(assessment)],
+                ['fissure', this._processVolcanoFissure(assessment, volcanoName, distanceKm)],
+            ];
+            for (const [ruleKey, section] of gated) {
+                if (!section) continue;
+                if (this._appliesTo(ruleKey, volcanoName)) {
+                    sections.push(section);
+                } else {
+                    warnings.push(this._notApplicableWarning(ruleKey, section, volcanoName));
+                }
             }
-
-            // Fissure
-            const fissure = this._processVolcanoFissure(assessment, volcanoName, distanceKm);
-            if (fissure) sections.push(fissure);
         }
 
         // 12. PAV (Potentially Active Volcano) — AV vs PAV conflict rules
         if (assessment.volcano.nearest_pav && assessment.volcano.nearest_pav !== "--") {
             const pavInfo = this._parseVolcanoText(assessment.volcano.nearest_pav);
+            if (!pavInfo) {
+                throw new Error(`Could not read the nearest potentially active volcano cell: "${assessment.volcano.nearest_pav}". ${VOLCANO_TEXT_HINT} Use "--" if there is none.`);
+            }
             const pavDistanceKm = pavInfo.distance;
             const bothWithin50 = pavDistanceKm < 50.0 && distanceKm < 50.0;
             const pavIsNearer  = pavDistanceKm < distanceKm;
@@ -205,8 +217,22 @@ export class DecisionEngine {
             common_statements: common,
             supersedes: supersedes,
             additional_recommendations: [],
-            boilerplate: this.schema.common_boilerplate || {}
+            boilerplate: this.schema.common_boilerplate || {},
+            warnings: warnings
         });
+    }
+
+    _appliesTo(ruleKey, volcanoName) {
+        const list = this.schema.volcano_rules[ruleKey]?.applies_to;
+        if (!list) return true;
+        const name = volcanoName.toLowerCase();
+        return list.some(v => name.includes(v.toLowerCase()));
+    }
+
+    _notApplicableWarning(ruleKey, section, volcanoName) {
+        const list = this.schema.volcano_rules[ruleKey].applies_to.join(', ');
+        return `Left out ${section.heading} ("${section.assessment}"): rules.js applies it only to ${list}. ` +
+            `If ${volcanoName} Volcano has a ${section.heading.toLowerCase()} map, add it to ${ruleKey}.applies_to.`;
     }
 
     _getIntroStatement(assessment) {
@@ -258,8 +284,10 @@ export class DecisionEngine {
 
         // Enforce the 1 km trigger declared in the schema. If the distance is known
         // and exceeds 1 000 m, suppress the section entirely (not within trigger range).
-        const distM = assessment.earthquake.fissure_distance_m;
-        if (distM !== null && distM !== undefined && distM > 1000) return null;
+        // An explicit distance wins; otherwise read it from the status text, which
+        // the fissure templates write as "Approximately {distance} meters ...".
+        const distM = assessment.earthquake.fissure_distance_m ?? this._parseDistanceM(status);
+        if (distM !== null && distM > 1000) return null;
 
         const rule = this.schema.earthquake_rules['fissure'];
         const expRec = ExplanationRecommendation.fromParts({
@@ -307,13 +335,23 @@ export class DecisionEngine {
         );
     }
 
+    // Returns null when the text doesn't match; callers decide what that means.
     _parseVolcanoText(text) {
-        const pattern = /Approximately\s+([\d.]+)\s*(?:km|kilometers)\s+(\w+)\s+of\s+(.+?)\s+Volcano/i;
+        const pattern = /Approximately\s+([\d.]+)\s*(?:km|kilometers?)\s+(\w+)\s+of\s+(.+?)\s+Volcano/i;
         const match = (text || "").match(pattern);
-        if (match) {
-            return { distance: parseFloat(match[1]), direction: match[2], name: match[3] };
-        }
-        return { distance: 0.0, direction: 'unknown', name: 'Unknown Volcano' };
+        if (!match) return null;
+        const distance = parseFloat(match[1]);
+        if (isNaN(distance)) return null;
+        return { distance, direction: match[2], name: match[3] };
+    }
+
+    // "Approximately 800 meters ...", "... 3 meter/s (or less) ...", "1.2 km" → metres.
+    _parseDistanceM(text) {
+        const match = (text || "").match(/Approximately\s+([\d.]+)\s*(kilometers?|km|meter\/s|meters?|m)\b/i);
+        if (!match) return null;
+        const value = parseFloat(match[1]);
+        if (isNaN(value)) return null;
+        return /^k/i.test(match[2]) ? value * 1000 : value;
     }
 
     _parseNearestVolcano(assessment) {

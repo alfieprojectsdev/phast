@@ -259,6 +259,7 @@ export const HAZARD_RULES_SCHEMA = {
             "recommendation": "For land-use planning and disaster risk reduction purposes, at least 5 meters on both sides of the fissure or at the edge of the deformation zone may be considered as a Zone of Avoidance.",
             "policy": { "show_explanation_if_safe": true },
             "trigger": "site_within_50km_or_watershed",
+            "applies_to": ["Taal"],
             "conditions": {
                 "safe": "Approximately {distance} kilo/meters {direction} of a mapped fissure",
                 "transected": "Prone; Transected at the {portion} portion by a mapped fissure"

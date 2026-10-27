@@ -98,7 +98,16 @@
                 <div class="field-group">
                     <label><input type="checkbox" id="report-vicinity-map" checked> Vicinity Map Provided</label>
                 </div>
+                <div id="report-volcano-options">
+                    <div class="field-group">
+                        <label><input type="checkbox" id="report-outside-watershed"> Site is outside the volcano's watershed</label>
+                    </div>
+                    <div class="field-group">
+                        <label><input type="checkbox" id="report-island-volcano"> Island volcano (site is off the island)</label>
+                    </div>
+                </div>
                 <button id="btn-gen-report" class="primary-btn">Generate Report</button>
+                <div id="report-warnings" class="report-warnings" style="display:none"></div>
                 <textarea id="report-output" readonly placeholder="Report will appear here..."></textarea>
                 <div class="controls">
                     <button id="btn-copy-report" class="secondary-btn">Copy to Clipboard</button>

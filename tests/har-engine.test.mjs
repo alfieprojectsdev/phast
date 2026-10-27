@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 
 import { HAZARD_RULES_SCHEMA } from '../src/lib/har-engine/rules.js';
 import { DecisionEngine } from '../src/lib/har-engine/engine.js';
+import { assessmentFromRow, findCategoryRow, COLUMNS } from '../src/lib/har-engine/table-row.js';
 import {
     Assessment,
     AssessmentCategory,
@@ -297,14 +298,19 @@ describe('_parseVolcanoText', () => {
         assert.equal(r.direction, 'NW');
     });
 
-    test('returns zero distance on unparseable input', () => {
-        const r = engine._parseVolcanoText('some random string');
-        assert.equal(r.distance, 0.0);
+    test('returns null on unparseable input', () => {
+        assert.equal(engine._parseVolcanoText('some random string'), null);
     });
 
-    test('handles null/empty gracefully', () => {
-        const r = engine._parseVolcanoText(null);
-        assert.equal(r.distance, 0.0);
+    test('returns null for null/empty input', () => {
+        assert.equal(engine._parseVolcanoText(null), null);
+        assert.equal(engine._parseVolcanoText(''), null);
+    });
+
+    test('accepts singular "kilometer"', () => {
+        const r = engine._parseVolcanoText('Approximately 1 kilometer east of Taal Volcano');
+        assert.equal(r.distance, 1);
+        assert.equal(r.name, 'Taal');
     });
 });
 
@@ -337,5 +343,184 @@ describe('rules.js — schema integrity', () => {
     test('volcanic_tsunami recommendation includes three natural signs', () => {
         const rec = HAZARD_RULES_SCHEMA.volcano_rules.volcanic_tsunami.recommendation;
         assert.ok(rec.includes('three natural signs') || rec.includes('ground shaking'));
+    });
+
+    test('volcano fissure applies_to is Taal only', () => {
+        assert.deepEqual(HAZARD_RULES_SCHEMA.volcano_rules.fissure.applies_to, ['Taal']);
+    });
+});
+
+// ─── Volcano: unreadable volcano cells ────────────────────────────────────────
+
+describe('Volcano — unreadable nearest-volcano cells', () => {
+    test('unparseable nearest AV → throws with the expected format, no report', () => {
+        assert.throws(
+            () => engine.processAssessment(makeVolcanoAssessment('Taal Volcano, about 12 km NE')),
+            /nearest active volcano cell: "Taal Volcano, about 12 km NE".*Approximately 12\.3 km/
+        );
+    });
+
+    test('blank nearest AV → throws', () => {
+        assert.throws(() => engine.processAssessment(makeVolcanoAssessment('--')), /nearest active volcano/);
+    });
+
+    test('unparseable nearest PAV → throws instead of reading 0 km', () => {
+        assert.throws(
+            () => engine.processAssessment(makeVolcanoAssessment(
+                'Approximately 30 kilometers North of Mayon Volcano', { nearest_pav: 'Arayat, 10 km' }
+            )),
+            /nearest potentially active volcano cell/
+        );
+    });
+
+    test('readable cell → named volcano, never "Unknown"', () => {
+        const out = engine.processAssessment(makeVolcanoAssessment('Approximately 30 kilometers North of Mayon Volcano'));
+        const combined = out.common_statements.map(s => s.explanation).join(' ');
+        assert.ok(!combined.includes('Unknown'));
+        assert.ok(combined.includes('Mayon Volcano is the nearest identified active volcano'));
+    });
+});
+
+// ─── Volcano: applies_to gating for VTS and VFI ───────────────────────────────
+
+describe('Volcano — applies_to for volcanic tsunami and fissure', () => {
+    const TAAL     = 'Approximately 8 kilometers North of Taal Volcano';
+    const MAYON    = 'Approximately 8 kilometers North of Mayon Volcano';
+    const PINATUBO = 'Approximately 8 kilometers North of Pinatubo Volcano';
+    const FISSURE  = 'Approximately 200 meters east of a mapped fissure';
+    const headings = out => out.sections.map(s => s.heading);
+
+    test('Taal, VTS prone → section rendered, no warning', () => {
+        const out = engine.processAssessment(makeVolcanoAssessment(TAAL, { volcanic_tsunami: 'Prone' }));
+        assert.ok(headings(out).includes('Volcanic Tsunami'));
+        assert.equal(out.warnings.length, 0);
+    });
+
+    test('Mayon, VTS prone → section left out, warning names the volcano and the list', () => {
+        const out = engine.processAssessment(makeVolcanoAssessment(MAYON, { volcanic_tsunami: 'Prone' }));
+        assert.ok(!headings(out).includes('Volcanic Tsunami'));
+        assert.equal(out.warnings.length, 1);
+        assert.match(out.warnings[0], /Volcanic Tsunami \("Prone"\).*Taal, Iriga.*Mayon Volcano/);
+    });
+
+    test('Mayon, VTS safe → no section and no warning', () => {
+        const out = engine.processAssessment(makeVolcanoAssessment(MAYON, { volcanic_tsunami: 'Safe' }));
+        assert.ok(!headings(out).includes('Volcanic Tsunami'));
+        assert.equal(out.warnings.length, 0);
+    });
+
+    test('Pinatubo, VTS prone → skipped as before, no warning', () => {
+        const out = engine.processAssessment(makeVolcanoAssessment(PINATUBO, { volcanic_tsunami: 'Prone' }));
+        assert.ok(!headings(out).includes('Volcanic Tsunami'));
+        assert.equal(out.warnings.length, 0);
+    });
+
+    test('Taal, fissure value → Fissure section rendered', () => {
+        const out = engine.processAssessment(makeVolcanoAssessment(TAAL, { fissure: FISSURE }));
+        assert.ok(headings(out).includes('Fissure'));
+        assert.equal(out.warnings.length, 0);
+    });
+
+    test('Mayon, fissure value → section left out with a warning', () => {
+        const out = engine.processAssessment(makeVolcanoAssessment(MAYON, { fissure: FISSURE }));
+        assert.ok(!headings(out).includes('Fissure'));
+        assert.equal(out.warnings.length, 1);
+        assert.match(out.warnings[0], /fissure\.applies_to/);
+    });
+
+    test('earthquake output always has an empty warnings array', () => {
+        assert.deepEqual(engine.processAssessment(makeEqAssessment()).warnings, []);
+    });
+});
+
+// ─── Earthquake: fissure distance read from the status text ───────────────────
+
+describe('Earthquake — fissure distance from status text', () => {
+    const hasFissure = out => out.sections.some(s => s.heading === 'Fissure (Earthquake-Related)');
+    const run = (fissure, extra = {}) => engine.processAssessment(makeEqAssessment({ fissure, ...extra }));
+
+    test('"Approximately 1500 meters" → suppressed (beyond 1 km)', () => {
+        assert.ok(!hasFissure(run('Safe; Approximately 1500 meters east of a mapped fissure')));
+    });
+
+    test('"Approximately 800 meters" → rendered', () => {
+        assert.ok(hasFissure(run('Safe; Approximately 800 meters east of a mapped fissure')));
+    });
+
+    test('"Approximately 1.2 kilometers" → suppressed', () => {
+        assert.ok(!hasFissure(run('Safe; Approximately 1.2 kilometers east of a mapped fissure')));
+    });
+
+    test('buffer-zone "meter/s (or less)" wording → rendered', () => {
+        assert.ok(hasFissure(run('Prone; Within the buffer zone; Approximately 3 meter/s (or less) east of a mapped fissure')));
+    });
+
+    test('transected (no distance in text) → rendered', () => {
+        assert.ok(hasFissure(run('Prone; Transected by a mapped fissure at the northern portion of the property')));
+    });
+
+    test('explicit fissure_distance_m wins over the text', () => {
+        assert.ok(!hasFissure(run('Safe; Approximately 800 meters east of a mapped fissure', { fissure_distance_m: 1500 })));
+    });
+});
+
+// ─── table-row.js: assessment table → Assessment ──────────────────────────────
+
+describe('table-row — assessmentFromRow / findCategoryRow', () => {
+    function row(values) {
+        const parts = Array(17).fill('');
+        for (const [field, value] of Object.entries(values)) parts[COLUMNS[field]] = value;
+        return parts;
+    }
+
+    const eqRow = row({
+        id: '7', category: 'Earthquake', coordinates: '121.0, 14.5',
+        active_fault: 'Safe; Approximately 2 kilometers north of the West Valley Fault', fissure: ' Prone ',
+    });
+    const volRow = row({
+        id: '8', category: 'Volcano',
+        nearest_active_volcano: 'Approximately 30 kilometers North of Mayon Volcano', lahar: 'Prone',
+    });
+    const volcanoOut = options => engine.processAssessment(
+        assessmentFromRow(volRow, { category: AssessmentCategory.VOLCANO, ...options })
+    );
+
+    test('findCategoryRow picks the matching row, else the first', () => {
+        assert.equal(findCategoryRow([eqRow, volRow], 'Volcano'), volRow);
+        assert.equal(findCategoryRow([eqRow], 'Volcano'), eqRow);
+    });
+
+    test('earthquake row → cells mapped and trimmed, blanks become "--"', () => {
+        const a = assessmentFromRow(eqRow, { category: AssessmentCategory.EARTHQUAKE });
+        assert.equal(a.id, '7');
+        assert.equal(a.earthquake.fissure, 'Prone');
+        assert.equal(a.earthquake.tsunami, '--');
+        assert.equal(a.volcano, null);
+        assert.equal(a.location.longitude, 121.0);
+        assert.equal(a.location.latitude, 14.5);
+    });
+
+    test('volcano row → outside_watershed and is_island_volcano come from the options', () => {
+        const a = assessmentFromRow(volRow, {
+            category: AssessmentCategory.VOLCANO, outsideWatershed: true, isIslandVolcano: true,
+        });
+        assert.equal(a.volcano.outside_watershed, true);
+        assert.equal(a.volcano.is_island_volcano, true);
+        assert.equal(a.earthquake, null);
+    });
+
+    test('outsideWatershed option reaches the gatekeeper end to end', () => {
+        const out = volcanoOut({ outsideWatershed: true });
+        assert.ok(out.common_statements.some(s => s.explanation.includes('safe from volcanic hazards')));
+        assert.equal(out.sections.length, 0);
+    });
+
+    test('isIslandVolcano option selects the island text end to end', () => {
+        const out = volcanoOut({ outsideWatershed: true, isIslandVolcano: true });
+        assert.ok(out.common_statements.some(s => s.explanation.includes('safe from erupted products')));
+    });
+
+    test('options default to off: Mayon at 30 km gets hazard sections', () => {
+        assert.ok(volcanoOut({}).sections.some(s => s.heading === 'Lahar'));
     });
 });

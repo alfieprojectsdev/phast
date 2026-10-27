@@ -4,7 +4,8 @@ console.log('PHAST Popup Loaded');
 import { generateFilenames } from '../lib/filename-generator.js';
 import { DecisionEngine } from '../lib/har-engine/engine.js';
 import { HAZARD_RULES_SCHEMA } from '../lib/har-engine/rules.js';
-import { Assessment, AssessmentCategory, Coordinate, FeatureType } from '../lib/har-engine/models.js';
+import { AssessmentCategory } from '../lib/har-engine/models.js';
+import { assessmentFromRow, findCategoryRow } from '../lib/har-engine/table-row.js';
 
 let _currentMetadata = null;
 let _currentFilenames = [];
@@ -102,6 +103,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('btn-send-eil').addEventListener('click', sendToEILViz);
     document.getElementById('btn-gen-report').addEventListener('click', generateReport);
+
+    const reportCategory = document.getElementById('report-category');
+    const syncVolcanoOptions = () => {
+        document.getElementById('report-volcano-options').style.display =
+            reportCategory.value === 'Volcano' ? '' : 'none';
+    };
+    reportCategory.addEventListener('change', syncVolcanoOptions);
+    syncVolcanoOptions();
 
     document.getElementById('setting-suffix').addEventListener('input', (e) => {
         chrome.storage.local.set({ hamSuffix: e.target.value });
@@ -411,6 +420,13 @@ function _setEILStatus(el, cls, html) {
     el.style.display = html ? '' : 'none';
 }
 
+// Shown beside the report, never inside it: the textarea is what gets copied.
+function _showReportWarnings(warnings) {
+    const el = document.getElementById('report-warnings');
+    el.innerHTML = warnings.map(w => `<div class="report-warning">${_escHtml(w)}</div>`).join('');
+    el.style.display = warnings.length ? '' : 'none';
+}
+
 function generateReport() {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         chrome.tabs.sendMessage(tabs[0].id, { action: 'GET_TABLE_DATA' }, (rows) => {
@@ -421,55 +437,19 @@ function generateReport() {
 
             const catStr = document.getElementById('report-category').value;
             const category = catStr === 'Earthquake' ? AssessmentCategory.EARTHQUAKE : AssessmentCategory.VOLCANO;
-            const vicinityMap = document.getElementById('report-vicinity-map').checked;
-
-            // Find row matching selected category
-            let targetRow = rows.find(parts => {
-                return parts[1] && parts[1].trim().toLowerCase() === catStr.toLowerCase();
-            });
-            if (!targetRow) targetRow = rows[0];
-
-            const parts = targetRow;
-            let earthquakeData = null;
-            let volcanoData = null;
-
-            const coordsStr = parts[3] ? parts[3].trim() : "0,0";
-
-            if (category === AssessmentCategory.EARTHQUAKE) {
-                earthquakeData = {
-                    active_fault: parts[4] ? parts[4].trim() : "--",
-                    liquefaction: parts[5] ? parts[5].trim() : "--",
-                    landslide: parts[6] ? parts[6].trim() : "--",
-                    tsunami: parts[7] ? parts[7].trim() : "--",
-                    fissure: parts[10] ? parts[10].trim() : "--"
-                };
-            } else {
-                volcanoData = {
-                    nearest_active_volcano: parts[8] ? parts[8].trim() : "--",
-                    nearest_pav: parts[9] ? parts[9].trim() : "--",
-                    fissure: parts[10] ? parts[10].trim() : "--",
-                    lahar: parts[11] ? parts[11].trim() : "--",
-                    pyroclastic_flow: parts[12] ? parts[12].trim() : "--",
-                    base_surge: parts[13] ? parts[13].trim() : "--",
-                    lava_flow: parts[14] ? parts[14].trim() : "--",
-                    ballistic_projectile: parts[15] ? parts[15].trim() : "--",
-                    volcanic_tsunami: parts[16] ? parts[16].trim() : "--"
-                };
-            }
+            _showReportWarnings([]);
 
             try {
-                const assessment = new Assessment({
-                    id: parts[0] || "1",
-                    category: category,
-                    feature_type: FeatureType.POINT,
-                    location: Coordinate.fromString(coordsStr),
-                    vicinity_map_provided: vicinityMap,
-                    earthquake: earthquakeData,
-                    volcano: volcanoData
+                const assessment = assessmentFromRow(findCategoryRow(rows, category), {
+                    category,
+                    vicinityMapProvided: document.getElementById('report-vicinity-map').checked,
+                    outsideWatershed: document.getElementById('report-outside-watershed').checked,
+                    isIslandVolcano: document.getElementById('report-island-volcano').checked,
                 });
 
                 const engine = new DecisionEngine(HAZARD_RULES_SCHEMA);
                 const harOutput = engine.processAssessment(assessment);
+                _showReportWarnings(harOutput.warnings);
 
                 let text = "";
                 text += `Category: ${harOutput.category}\n\n`;

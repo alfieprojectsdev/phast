@@ -455,6 +455,14 @@ describe('Volcano — Pinatubo and Mayon lahar explanations', () => {
         assert.ok(ex.indexOf('Zone 2 includes') > -1 && ex.indexOf('Zone 2 includes') < ex.indexOf('Zone 3 includes'));
     });
 
+    test('Pinatubo "Zones 2 to 4" and "Zones 2-4" → zones 2, 3 and 4', () => {
+        for (const status of ['Zones 2 to 4', 'Zones 2-4']) {
+            const ex = lahar(engine.processAssessment(makeVolcanoAssessment(PINATUBO, { lahar: status }))).explanation_recommendation.explanation;
+            for (const z of [2, 3, 4]) assert.ok(ex.includes(`Zone ${z} `), `${status}: Zone ${z}`);
+            assert.ok(!ex.includes('Zone 1 includes') && !ex.includes('Zone 5 are'), status);
+        }
+    });
+
     test('Pinatubo "Zone 4" → rendered even though zone 4 is "safe from lahars"', () => {
         const section = lahar(engine.processAssessment(makeVolcanoAssessment(PINATUBO, { lahar: 'Zone 4' })));
         assert.ok(section);

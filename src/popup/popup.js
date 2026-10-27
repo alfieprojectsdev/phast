@@ -432,6 +432,10 @@ function _showReportWarnings(warnings) {
 
 function generateReport() {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        // Read the location from this tab, not _currentMetadata: that can come from the
+        // session cache, which holds the last page scraped in any tab.
+        chrome.tabs.sendMessage(tabs[0].id, { action: 'GET_PAGE_METADATA' }, (meta) => {
+        const siteLocation = (!chrome.runtime.lastError && meta && meta.location) || '';
         chrome.tabs.sendMessage(tabs[0].id, { action: 'GET_TABLE_DATA' }, (rows) => {
             _showReportWarnings([]);
             if (!rows || rows.length === 0) {
@@ -453,7 +457,7 @@ function generateReport() {
                     isIslandVolcano: document.getElementById('report-island-volcano').checked,
                     avHasHazardMap: !document.getElementById('report-av-no-map').checked,
                     pavHasHazardMap: document.getElementById('report-pav-map').checked,
-                    siteLocation: _currentMetadata?.location || '',
+                    siteLocation,
                 });
 
                 const engine = new DecisionEngine(HAZARD_RULES_SCHEMA);
@@ -502,6 +506,7 @@ function generateReport() {
                     (rowMatched ? "" : `\n\nThe table has no ${catStr} row, so the first row was read instead.`);
                 console.error(e);
             }
+        });
         });
     });
 }

@@ -511,9 +511,15 @@ export class DecisionEngine {
 
         if (name.includes('pinatubo') && cases.pinatubo) {
             block = cases.pinatubo;
-            const named = s.match(/zones?\s*[1-5](?:\s*(?:,|and|&|to|-)\s*[1-5])*/g) || [];
-            const zones = [...new Set(named.join(' ').match(/[1-5]/g) || [])].sort();
-            definitions = zones.map(z => block.zones[z]).filter(Boolean);
+            // "Zone 1", "Zones 2 and 3", "Zones 2 to 4" / "Zones 2-4" (a range).
+            const zones = new Set();
+            for (const m of s.matchAll(/zones?\s*([1-5](?:\s*(?:,|and|&|to|-)\s*[1-5])*)/g)) {
+                for (const r of m[1].matchAll(/([1-5])(?:\s*(?:to|-)\s*([1-5]))?/g)) {
+                    const a = Number(r[1]), b = Number(r[2] || r[1]);
+                    for (let z = Math.min(a, b); z <= Math.max(a, b); z++) zones.add(String(z));
+                }
+            }
+            definitions = [...zones].sort().map(z => block.zones[z]).filter(Boolean);
         } else if (name.includes('mayon') && cases.mayon) {
             block = cases.mayon;
             definitions = Object.entries(block.categories)

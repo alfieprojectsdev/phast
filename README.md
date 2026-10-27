@@ -89,7 +89,7 @@ Settings are stored in `chrome.storage.local` and persist across sessions.
 - Filename Suffix is appended to every filename. Default `ArP`.
 - EIL server URL is blank by default, which means auto-detect. See below.
 
-The manifest asks for `activeTab`, `scripting` (to run the map tools in the page), `storage`, `clipboardRead` and `clipboardWrite`. Its host permissions cover HAS Admin, the EIL server candidates and two local development addresses, which lets the popup read `/readyz` responses without CORS getting in the way. It also lists `https://*.google.com/*`, though nothing under `src/` currently requests a google.com URL.
+The manifest asks for `activeTab`, `scripting` (to run the map tools in the page), `storage`, `clipboardRead` and `clipboardWrite`. Its host permissions cover HAS Admin, the EIL server candidates, the retired `gps3.local` address (so an older Settings value keeps working) and two local development addresses, which lets the popup read `/readyz` responses without CORS getting in the way. It also lists `https://*.google.com/*`, though nothing under `src/` currently requests a google.com URL.
 
 ## EIL server
 
@@ -104,7 +104,7 @@ The address is being migrated, so PHAST probes four candidates at the same time,
 
 Because the order is fixed, the deployment can move up the list without anyone changing a setting. To point PHAST somewhere else (a test instance, or a server that has moved), fill in Settings > EIL server URL. A value there turns auto-detection off completely, so a typo fails with an error instead of quietly using a different server.
 
-If none of the four answers, you're probably off the PHIVOLCS network and not on the tailnet.
+If none is ready but one of them answered, PHAST reports that server's not-ready reason. If none of the four answers, you're probably off the PHIVOLCS network and not on the tailnet.
 
 ### Running the stack locally (developers)
 

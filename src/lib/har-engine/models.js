@@ -128,7 +128,7 @@ export class ExplanationRecommendation {
 }
 
 export class HAROutput {
-    constructor({ category, intro, sections, common_statements, supersedes, additional_recommendations, boilerplate }) {
+    constructor({ category, intro, sections, common_statements, supersedes, additional_recommendations, boilerplate, warnings }) {
         this.category = category;
         this.intro = intro;
         this.sections = sections || [];
@@ -136,5 +136,7 @@ export class HAROutput {
         this.supersedes = supersedes;
         this.additional_recommendations = additional_recommendations || [];
         this.boilerplate = boilerplate || {};
+        // Notes for the assessor, not part of the HAR text (e.g. a status left out by applies_to).
+        this.warnings = warnings || [];
     }
 }

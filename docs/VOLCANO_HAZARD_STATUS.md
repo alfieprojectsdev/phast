@@ -3,6 +3,8 @@
 *Distilled from: DOST-PHIVOLCS Status of Volcano-related Hazard Information/Maps, 15 March 2024.*
 *Use this alongside [LOGIC_GUIDE.md](LOGIC_GUIDE.md) when generating volcano HAR reports.*
 
+*Which of these rules the PHAST engine actually implements is recorded in the doc-to-code mapping in [README.md](../README.md#logic-engine-doc-to-code-mapping).*
+
 > **Map Inventory (as of March 2024):** Of the 105 total active volcano hazard maps, **25 are in the standard format** and **23 are in the legacy (not standard) format**. The following AVs have legacy maps pending final relayout: **Bulusan, Iriga, Kanlaon, Mayon, Pinatubo, and Taal**.
 
 ---
@@ -27,11 +29,11 @@
 
 ### Map Format Legend
 
-| Symbol | Meaning |
+| Status | Meaning |
 | :--- | :--- |
-| ✅ Standard | New standardized format (post-2020 NVTA revision) |
-| 🔵 Legacy | Existing maps; not yet in standard format |
-| ❌ No Maps | Ongoing Eruptive/Technical Review (ETR) as of 2024 — assessment deferred |
+| Standard | New standardized format (post-2020 NVTA revision) |
+| Legacy | Existing maps; not yet in standard format |
+| No maps | Ongoing Eruptive/Technical Review (ETR) as of 2024 — assessment deferred |
 
 ---
 
@@ -41,18 +43,18 @@ The following 12 AVs have published hazard maps in the current NVTA standard for
 
 | Volcano | Status | Notes |
 | :--- | :--- | :--- |
-| Babuyan Claro | ✅ Standard | — |
-| Biliran | ✅ Standard | — |
-| Camiguin de Babuyanes | ✅ Standard | — |
-| Cagua | ✅ Standard | — |
-| Didicas | ✅ Standard | — |
-| Iraya | ✅ Standard | — |
-| Isarog | ✅ Standard | — |
-| Leonard Kniaseff | ✅ Standard | — |
-| Matutum | ✅ Standard | — |
-| Parker | ✅ Standard | — |
-| Ragang | ✅ Standard | — |
-| Smith | ✅ Standard | — |
+| Babuyan Claro | Standard | — |
+| Biliran | Standard | — |
+| Camiguin de Babuyanes | Standard | — |
+| Cagua | Standard | — |
+| Didicas | Standard | — |
+| Iraya | Standard | — |
+| Isarog | Standard | — |
+| Leonard Kniaseff | Standard | — |
+| Matutum | Standard | — |
+| Parker | Standard | — |
+| Ragang | Standard | — |
+| Smith | Standard | — |
 
 ---
 
@@ -60,7 +62,7 @@ The following 12 AVs have published hazard maps in the current NVTA standard for
 
 These 9 AVs have hazard maps, but not yet in the NVTA standard format. Map years and available types are noted where confirmed.
 
-| Volcano | Available Maps (Year) | Engine Notes |
+| Volcano | Available Maps (Year) | Notes |
 | :--- | :--- | :--- |
 | **Banahaw** | Legacy format | Refer to source maps; standard set pending |
 | **Bulusan** | PDC (2016), LHR (2016), LV (2016), TEP (2010); PDZ = 4 km | 4 km PDZ radius |
@@ -152,7 +154,7 @@ These expand on LOGIC_GUIDE.md Part 4 ("Red Flags"). See also Part 4 of this doc
 
 | Hazard | Status | HAR Action |
 | :--- | :--- | :--- |
-| **LHR** | ✅ Published (2022) | Use Pinatubo Lahar Zone system (Zones 1–5) — NOT Prone/Safe |
+| **LHR** | Published (2022) | Use Pinatubo Lahar Zone system (Zones 1–5) — NOT Prone/Safe |
 | **PDC (PF)** | Ongoing qualitative | Assess if data is present; otherwise defer. Legacy 1996 map data from *Fire and Mud* exists but is not the current standard. |
 | **LV** | To verify | **Skip** — no finalized map |
 | **BP** | To verify | **Skip** — no finalized map |
@@ -174,13 +176,13 @@ These expand on LOGIC_GUIDE.md Part 4 ("Red Flags"). See also Part 4 of this doc
 
 | Hazard | Status | HAR Action |
 | :--- | :--- | :--- |
-| **PDC / BS** | ✅ Published (2020) | Use "Base Surge" language for Taal; assess both PDC and BS if applicable |
-| **BP** | ✅ Published (2020) | Assess if applicable |
-| **VTS** | ✅ Published (2020) | Assess if applicable |
-| **VFI** | ✅ Published (2023) | Standard-format fissure map; include fissure section |
+| **PDC / BS** | Published (2020) | Use "Base Surge" language for Taal; assess both PDC and BS if applicable |
+| **BP** | Published (2020) | Assess if applicable |
+| **VTS** | Published (2020) | Assess if applicable |
+| **VFI** | Published (2023) | Standard-format fissure map; include fissure section |
 | **PDZ** | Taal Volcano Island | Do **not** use a radius; use: *"Taal Volcano Island is designated as the Permanent Danger Zone of the volcano."* |
 
-> **Fissure note for Taal:** If safe from fissure, still add: *"Stakeholders are advised to report to the Institute fissures that may be observed in the area."*
+> **Fissure note for Taal:** If safe from fissure, still add: *"Stakeholders are advised to report to the Institute fissures that may be observed at Taal Volcano and vicinity that need to be reflected in the fissure map."*
 
 ---
 
@@ -193,7 +195,7 @@ These expand on LOGIC_GUIDE.md Part 4 ("Red Flags"). See also Part 4 of this doc
 | **PDC** | 1988 | Assess if applicable |
 | **LHR** | 1988 | Assess if applicable |
 | **LV** | 1988 | Assess if applicable |
-| **BP** | ✅ Updated (2023) | Assess if applicable |
+| **BP** | Updated (2023) | Assess if applicable |
 | **PDZ** | 4 km radius | Standard language applies |
 
 ---
@@ -204,9 +206,9 @@ These expand on LOGIC_GUIDE.md Part 4 ("Red Flags"). See also Part 4 of this doc
 
 | Hazard | Status | HAR Action |
 | :--- | :--- | :--- |
-| **PDC** | ✅ 2023 | Assess if applicable |
+| **PDC** | 2023 | Assess if applicable |
 | **LHR** | 1999 | Assess if applicable |
-| **VTS** | ✅ 2023 | Assess if applicable |
+| **VTS** | 2023 | Assess if applicable |
 | **LV, BP** | No map on record | Skip unless new maps published |
 
 ---

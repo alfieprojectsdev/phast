@@ -2,7 +2,7 @@
 
 PHIVOLCS Hazard Assessment Support Tool
 
-[![Version](https://img.shields.io/badge/version-1.0.0-blue)](https://github.com/alfieprojectsdev/phast)
+[![Release](https://img.shields.io/github/v/release/alfieprojectsdev/phast)](https://github.com/alfieprojectsdev/phast/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-Chrome-green)](https://www.google.com/chrome/)
 
 PHAST is a Chrome extension (Manifest V3) for assessors working in PHIVOLCS HAS Admin. It replaces a set of bookmarklets and manual steps: it reads the request page, builds the hazard assessment map filenames, adds overlay and import tools to the HAS Admin Leaflet map, hands the drawn parcel to EIL-Viz, and drafts Hazard Assessment Report (HAR) text from the assessment table.

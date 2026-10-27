@@ -144,7 +144,7 @@ There's no build step and no `package.json`. Load the folder unpacked, edit, and
 node --test tests/har-engine.test.mjs
 ```
 
-58 tests, covering the HAR engine, the table-row mapping in `table-row.js` and the shape of `rules.js`. Nothing tests the popup, the scraper or the map handlers. Tested on Node 24.19.
+59 tests, covering the HAR engine, the table-row mapping in `table-row.js` and the shape of `rules.js`. Nothing tests the popup, the scraper or the map handlers. Tested on Node 24.19.
 
 `tests/mock-page.html` is a stand-in HAS Admin page with a Leaflet map and two attachments, for trying the map tools. The content scripts also match `file://` URLs, so open it from disk after turning on "Allow access to file URLs" in the extension's details. It loads Leaflet from unpkg, so it needs internet access. Its table doesn't have the column layout the Report tab reads.
 

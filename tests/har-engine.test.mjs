@@ -447,6 +447,10 @@ describe('Earthquake — fissure distance from status text', () => {
         assert.ok(hasFissure(run('Safe; Approximately 800 meters east of a mapped fissure')));
     });
 
+    test('"Approximately 1,200 meters" (thousands separator) → suppressed', () => {
+        assert.ok(!hasFissure(run('Safe; Approximately 1,200 meters east of a mapped fissure')));
+    });
+
     test('"Approximately 1.2 kilometers" → suppressed', () => {
         assert.ok(!hasFissure(run('Safe; Approximately 1.2 kilometers east of a mapped fissure')));
     });

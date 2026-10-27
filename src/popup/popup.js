@@ -5,7 +5,7 @@ import { generateFilenames } from '../lib/filename-generator.js';
 import { DecisionEngine } from '../lib/har-engine/engine.js';
 import { HAZARD_RULES_SCHEMA } from '../lib/har-engine/rules.js';
 import { AssessmentCategory } from '../lib/har-engine/models.js';
-import { assessmentFromRow, findCategoryRow } from '../lib/har-engine/table-row.js';
+import { assessmentFromRow, findCategoryRow, COLUMNS } from '../lib/har-engine/table-row.js';
 
 let _currentMetadata = null;
 let _currentFilenames = [];
@@ -430,6 +430,7 @@ function _showReportWarnings(warnings) {
 function generateReport() {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         chrome.tabs.sendMessage(tabs[0].id, { action: 'GET_TABLE_DATA' }, (rows) => {
+            _showReportWarnings([]);
             if (!rows || rows.length === 0) {
                 document.getElementById('report-output').value = "Error: No assessment table data found on page.";
                 return;
@@ -437,10 +438,12 @@ function generateReport() {
 
             const catStr = document.getElementById('report-category').value;
             const category = catStr === 'Earthquake' ? AssessmentCategory.EARTHQUAKE : AssessmentCategory.VOLCANO;
-            _showReportWarnings([]);
+            const row = findCategoryRow(rows, category);
+            // findCategoryRow falls back to the first row; say so if that row then fails.
+            const rowMatched = (row[COLUMNS.category] || '').trim().toLowerCase() === catStr.toLowerCase();
 
             try {
-                const assessment = assessmentFromRow(findCategoryRow(rows, category), {
+                const assessment = assessmentFromRow(row, {
                     category,
                     vicinityMapProvided: document.getElementById('report-vicinity-map').checked,
                     outsideWatershed: document.getElementById('report-outside-watershed').checked,
@@ -488,7 +491,8 @@ function generateReport() {
                 document.getElementById('report-output').value = text;
 
             } catch (e) {
-                document.getElementById('report-output').value = "Error: " + e.message;
+                document.getElementById('report-output').value = "Error: " + e.message +
+                    (rowMatched ? "" : `\n\nThe table has no ${catStr} row, so the first row was read instead.`);
                 console.error(e);
             }
         });

@@ -347,9 +347,9 @@ export class DecisionEngine {
 
     // "Approximately 800 meters ...", "... 3 meter/s (or less) ...", "1.2 km" → metres.
     _parseDistanceM(text) {
-        const match = (text || "").match(/Approximately\s+([\d.]+)\s*(kilometers?|km|meter\/s|meters?|m)\b/i);
+        const match = (text || "").match(/Approximately\s+([\d,.]+)\s*(kilometers?|km|meter\/s|meters?|m)\b/i);
         if (!match) return null;
-        const value = parseFloat(match[1]);
+        const value = parseFloat(match[1].replace(/,/g, ''));
         if (isNaN(value)) return null;
         return /^k/i.test(match[2]) ? value * 1000 : value;
     }

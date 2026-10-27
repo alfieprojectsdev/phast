@@ -12,18 +12,32 @@ let _currentFilenames = [];
 // Where the EIL stack is served. eil-calc and eil-viz sit behind one origin:
 // `/` is the eil-viz bundle, `/api/` proxies to eil-calc.
 //
-// Tried in order, most durable first, because the address is mid-migration:
-//   1. the DNS name, once MIS creates the A record (survives everything)
-//   2. mDNS — works today on clients that resolve .local; survives an IP change
-//   3. the raw IP — always works on the LAN, but breaks if the host is renumbered
+// The address is mid-migration, so several may work at once. Tried in this
+// order, and the first that answers wins — preference order, not a race:
+//   1. the DNS name, once MIS creates the A record. Reaches everyone with no
+//      client-side setup; the destination this list is migrating toward.
+//   2. `gps3` over Tailscale MagicDNS. Follows the host across networks and
+//      renumbering, but only resolves on a machine joined to the tailnet with
+//      MagicDNS enabled.
+//   3. the LAN IP. The one candidate needing no tailnet membership, so it is
+//      what an un-enrolled assessor on the PHIVOLCS network falls back to.
+//      Breaks if the host is renumbered.
+//   4. the raw Tailscale IP (from the tailnet admin console). Stable for the
+//      life of gps3's registration and works without MagicDNS, but is
+//      reassigned if the machine is removed and re-added to the tailnet.
 //
-// Whichever answers first is used, so no assessor has to be told to change
-// anything as the deployment moves up that list. An explicit setting overrides
-// the whole probe.
+// Ranked (2) above (3) because a name that follows the host outlasts a literal
+// address, and Tailscale connects same-subnet peers directly anyway — an
+// on-LAN assessor with the tailnet loses nothing by resolving through it.
+//
+// The two Tailscale entries simply fail their probes on a machine that is not
+// enrolled, so the list degrades correctly while assessors are onboarded
+// gradually. An explicit Settings value overrides the whole probe.
 const DEFAULT_EIL_CANDIDATES = [
     'http://eil.phivolcs.dost.gov.ph',
-    'http://gps3.local:8080',
+    'http://gps3:8080',
     'http://192.168.48.98:8080',
+    'http://100.86.209.16:8080',
 ];
 
 const _stripSlash = u => u.trim().replace(/\/+$/, '');

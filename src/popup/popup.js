@@ -78,6 +78,9 @@ const _escHtml = s => String(s).replace(/[&<>"]/g, c =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 document.addEventListener('DOMContentLoaded', () => {
+    // manifest.json is the one place the version is set; the release workflow checks tags against it.
+    document.getElementById('app-version').textContent = `v${chrome.runtime.getManifest().version}`;
+
     // Tab Navigation
     const tabs = document.querySelectorAll('.tab-btn');
     tabs.forEach(tab => {

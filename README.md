@@ -46,6 +46,21 @@ On any HAS Admin table with the `items` class, clicking a row toggles that row's
 
 ## Installation
 
+### Assessors (no Git needed)
+
+1. Download [phast.zip](https://github.com/alfieprojectsdev/phast/releases/latest/download/phast.zip). The link always points at the latest release.
+2. Extract it to a folder you'll keep, such as `Documents\PHAST`. Don't delete or move that folder afterwards: Chrome loads PHAST from it every time it starts.
+3. Open `chrome://extensions/` in Chrome.
+4. Turn on Developer mode (top right). Chrome only installs extensions from outside the Chrome Web Store this way.
+5. Click "Load unpacked" and select the folder that contains `manifest.json`. If extracting created a folder inside your folder, pick the inner one.
+6. Optionally, pin PHAST from the puzzle-piece menu next to the address bar so its icon stays visible.
+
+To update, download the new `phast.zip`, extract it over the same folder (replace the existing files), then click the reload arrow on PHAST's card in `chrome://extensions/`. Your settings carry over.
+
+If you installed PHAST before its first release (from a Git clone or GitHub's Download ZIP), remove that copy in `chrome://extensions/` first, then follow the steps above. Releases have a fixed extension ID, which older copies don't, so the filename suffix and EIL server URL reset once and need setting again.
+
+### Developers
+
 1. Clone the repository:
    ```
    git clone https://github.com/alfieprojectsdev/phast.git
@@ -145,6 +160,21 @@ node --test tests/har-engine.test.mjs
 33 tests, covering the HAR engine and the shape of `rules.js`. Nothing tests the popup, the scraper or the map handlers. Tested on Node 24.19.
 
 `tests/mock-page.html` is a stand-in HAS Admin page with a Leaflet map and two attachments, for trying the map tools. The content scripts also match `file://` URLs, so open it from disk after turning on "Allow access to file URLs" in the extension's details. It loads Leaflet from unpkg, so it needs internet access. Its table doesn't have the column layout the Report tab reads.
+
+### Releasing
+
+`manifest.json` holds the only version number; the popup header reads it from there. To publish a release:
+
+1. Bump `version` in `manifest.json` and merge that to main.
+2. Tag the merge with the same version and push the tag:
+   ```
+   git tag v1.1.0
+   git push origin v1.1.0
+   ```
+
+`.github/workflows/release.yml` then checks that the tag matches the manifest version and that every file the manifest names exists. It zips `manifest.json`, `src/` and `icons/` into `phast.zip` and attaches that to a new GitHub release, which the assessor download link picks up. A tag that doesn't match the manifest fails the workflow without creating a release.
+
+The `key` field in `manifest.json` pins the extension ID to `falagngpanpcbdjfgbjdlihgngnkpdem` wherever the folder is. Don't remove or change it: a different ID is a different extension to Chrome, and assessors would lose their saved settings. The matching private key isn't in the repository. It's only needed to pack a signed `.crx` with this ID, for example for installation through Chrome policy.
 
 ### Assessment table columns
 

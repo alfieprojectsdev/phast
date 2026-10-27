@@ -36,7 +36,9 @@ These buttons call functions that PHAST injects into the page's own JavaScript c
 
 ### Report tab
 
-"Generate Report" reads the assessment table as it currently is on the page, including any edits you've made, takes the row whose category matches the selected Earthquake or Volcano option (or the first row, if none does), and runs it through the HAR engine. Tick "Vicinity Map Provided" to get the vicinity-map intro sentence; untick it for the coordinates one.
+"Generate Report" reads the assessment table as it currently is on the page, including any edits you've made, takes the row whose category matches the selected Earthquake or Volcano option (or the first row, if none does), and runs it through the HAR engine. Tick "Vicinity Map Provided" to get the vicinity-map intro sentence; untick it for the coordinates one. With Volcano selected, two more checkboxes appear: "Site is outside the volcano's watershed" applies the distant-site rule regardless of distance, and "Island volcano" switches the distant-site sentence to the island wording.
+
+If a volcano cell can't be read (see [Assessment table columns](#assessment-table-columns)), you get an error instead of a report. When the engine leaves out a status you entered because the rules don't apply that hazard to the nearest volcano, it says so in a box above the report. The box isn't part of the copied text.
 
 The engine copies each hazard status from the table verbatim and adds the matching explanation, recommendation and boilerplate. It decides whether a hazard is safe by looking for the word "safe" anywhere in its status. The rules it follows are in [docs/LOGIC_GUIDE.md](docs/LOGIC_GUIDE.md), and [Logic engine: doc-to-code mapping](#logic-engine-doc-to-code-mapping) records where the engine does and doesn't implement them.
 
@@ -77,8 +79,8 @@ The filename codes come from the page's Hazard Type field. If that field is empt
 | Base surge | Volcano | `VOL-BS` | Taal only, when not Safe |
 | Lava flow | Volcano | `VOL-LF` | Section only when not Safe; skipped for Pinatubo |
 | Ballistic projectiles | Volcano | none | Section only when not Safe; skipped for Pinatubo |
-| Volcanic tsunami | Volcano | none | Section only when not Safe; skipped for Pinatubo |
-| Volcanic fissure | Volcano | none | Section whenever the fissure cell has a value and the site is within 50 km |
+| Volcanic tsunami | Volcano | none | Taal and Iriga only, when not Safe. For other volcanoes the status is left out with a warning; Pinatubo is skipped silently |
+| Volcanic fissure | Volcano | none | Taal only, whenever the fissure cell has a value and the site is within 50 km. Other volcanoes get a warning instead |
 
 Ballistic projectiles and volcanic tsunami are recognised by the table-text search but have no filename code, so they don't produce a file.
 
@@ -132,7 +134,7 @@ There's no build step and no `package.json`. Load the folder unpacked, edit, and
 | `src/inject/leaflet-loader.js` | Page, isolated world | Injects `map-handlers.js` into the page's own context |
 | `src/inject/map-handlers.js` | Page, main world | `window.PHAST.*`: overlay, KML import, ULAP, coordinates, GeoJSON export |
 | `src/lib/filename-generator.js` | Popup | Filename rules |
-| `src/lib/har-engine/` | Popup | `rules.js` (text and thresholds), `models.js`, `engine.js` (decision logic) |
+| `src/lib/har-engine/` | Popup | `rules.js` (text and thresholds), `models.js`, `engine.js` (decision logic), `table-row.js` (assessment table row to `Assessment`) |
 | `src/background/service-worker.js` | Background | Install log and a `PING` responder; nothing else |
 | `src/vendor/` | Loaded by `map-handlers.js` | Leaflet.DistortableImage, PDF.js, JSZip. See [src/vendor/README.md](src/vendor/README.md) |
 
@@ -142,13 +144,13 @@ There's no build step and no `package.json`. Load the folder unpacked, edit, and
 node --test tests/har-engine.test.mjs
 ```
 
-33 tests, covering the HAR engine and the shape of `rules.js`. Nothing tests the popup, the scraper or the map handlers. Tested on Node 24.19.
+59 tests, covering the HAR engine, the table-row mapping in `table-row.js` and the shape of `rules.js`. Nothing tests the popup, the scraper or the map handlers. Tested on Node 24.19.
 
 `tests/mock-page.html` is a stand-in HAS Admin page with a Leaflet map and two attachments, for trying the map tools. The content scripts also match `file://` URLs, so open it from disk after turning on "Allow access to file URLs" in the extension's details. It loads Leaflet from unpkg, so it needs internet access. Its table doesn't have the column layout the Report tab reads.
 
 ### Assessment table columns
 
-The Report tab reads the assessment table (`#assessment-grid table.items`) by column position:
+The Report tab reads the assessment table (`#assessment-grid table.items`) by column position. The mapping is `COLUMNS` in `src/lib/har-engine/table-row.js`:
 
 | Column | Field | Column | Field |
 | :--- | :--- | :--- | :--- |
@@ -161,7 +163,7 @@ The Report tab reads the assessment table (`#assessment-grid table.items`) by co
 | 7 | Tsunami | 15 | Ballistic projectiles |
 | 8 | Nearest active volcano | 16 | Volcanic tsunami |
 
-The two volcano cells must read like `Approximately 12.3 km northeast of Taal Volcano` (`km` or `kilometers`). The engine takes the distance and name from that pattern. If the nearest active volcano cell doesn't match, the distance is read as 0 km.
+The two volcano cells must read like `Approximately 12.3 km northeast of Taal Volcano` (`km`, `kilometer` or `kilometers`). The engine takes the distance and name from that pattern. If the nearest active volcano cell doesn't match, or the potentially active volcano cell doesn't match and isn't `--`, Generate Report shows an error naming the cell instead of producing a report.
 
 ## Logic engine: doc-to-code mapping
 
@@ -169,7 +171,9 @@ The engine in `src/lib/har-engine/` is meant to track two reference documents in
 
 Both documents are distilled from PHIVOLCS source PDFs: "HAR Templates (as of June 2024)", "Finalization VHAR Proposed Template (30 May 2024, edited 11 June 2024)" and "Status of Volcano-related Hazard Information/Maps (15 March 2024)". The PDFs aren't in this repository because their sample reports include personal names; `.gitignore` excludes every PDF in `docs/`, so local copies, including future editions, stay out of commits. Their formatting carries meaning that plain text extraction loses: struck-through text is deleted wording, and red italic lines are conditions for when a block applies, not report text. Read them as rendered pages, not extracted text.
 
-Most of `rules.js` is text the engine copies into the report. Some of it is reference data the engine never reads: the `conditions` templates of every hazard except the PDZ, `gep_thresholds`, `gmma_ready_conditions`, `ground_shaking.palawan_sulu`, the `trigger` strings, the fissure `special_cases`, and `applies_to` everywhere except base surge. The tables say where that matters.
+Most of `rules.js` is text the engine copies into the report. Some of it is reference data the engine never reads: the `conditions` templates of every hazard except the PDZ, `gep_thresholds`, `gmma_ready_conditions`, `ground_shaking.palawan_sulu`, the `trigger` strings, the fissure `special_cases`, and `ballistic_projectiles.applies_to`. The tables say where that matters.
+
+`applies_to` is checked for base surge, volcanic tsunami and volcanic fissure. Base surge outside its list is dropped silently. For the other two, a status the assessor entered for a volcano not on the list is left out of the report and returned in `HAROutput.warnings`, which the popup shows above the report. The lists may lag behind the published maps, so a warning means "check", not "wrong".
 
 ### docs/LOGIC_GUIDE.md
 
@@ -181,15 +185,15 @@ Most of `rules.js` is text the engine copies into the report. Some of it is refe
 | Part 2B: Tsunami | `earthquake_rules.tsunami` | Section only when the status doesn't contain "safe". The `no_data_low_lying_coastal` wording is only there for reference |
 | Part 2C: Liquefaction | `earthquake_rules.liquefaction`; `engine.js`: `_isLiqSusceptible()` | No liquefaction section. The status picks the combined ground-shaking-and-liquefaction sentence, or the ground-shaking-only one for "Safe", a blank cell, or "Low Potential" (hardcoded; `gmma_ready_conditions` isn't read) |
 | Part 2D: Ground shaking | `earthquake_rules.common.ground_shaking` | Always the `default` sentence. The Palawan/Sulu variant is never chosen |
-| Part 3, Step 1: 50 km gatekeeper | `engine.js`: `isDistant` in `processVolcanoAssessment()` | Distant when the nearest active volcano is more than 50 km away or `outside_watershed` is true. A distant report gets the preamble and ashfall statement and no hazard sections. The popup never sets `outside_watershed` |
-| Part 3, Step 1: Island exception | `volcano_rules.distance_rules.outside_safe_zone_island` | Used when distant and `is_island_volcano` is true. The popup never sets `is_island_volcano` |
+| Part 3, Step 1: 50 km gatekeeper | `engine.js`: `isDistant` in `processVolcanoAssessment()` | Distant when the nearest active volcano is more than 50 km away or `outside_watershed` is true. A distant report gets the preamble and ashfall statement and no hazard sections. `outside_watershed` comes from the "Site is outside the volcano's watershed" checkbox |
+| Part 3, Step 1: Island exception | `volcano_rules.distance_rules.outside_safe_zone_island` | Used when distant and `is_island_volcano` is true. `is_island_volcano` comes from the "Island volcano" checkbox |
 | Part 3, Step 1b: AV vs PAV | `engine.js`: PAV block in `processVolcanoAssessment()` | PAV nearer and both under 50 km: PAV statement plus a VOOD note. PAV under 50 km and AV at 50 km or more: PAV statement only, a case the guide doesn't cover. Otherwise no PAV output |
 | Part 3, Step 2: PDZ | `volcano_rules.pdz_danger_zone`; `engine.js`: `_processPdz()` | Radius from `special_cases`, matched as a substring of the volcano name; inside when the distance is under the radius. Pinatubo gets danger-zone wording, Taal the island sentence. A volcano with no listed radius gets `no_pdz_within_10km` when the site is under 10 km |
-| Part 3, Step 3: Silent-if-safe hazards | `volcano_rules.lahar`, `pyroclastic_density_current`, `lava_flow`, `ballistic_projectiles`, `volcanic_tsunami` | Section only when the status doesn't contain "safe". Lava flow, ballistic and volcanic tsunami are skipped for Pinatubo and otherwise rendered for any volcano. When the lahar, PDC or lava flow status contains "prone", the PDC recommendation is also added to the common statements |
+| Part 3, Step 3: Silent-if-safe hazards | `volcano_rules.lahar`, `pyroclastic_density_current`, `lava_flow`, `ballistic_projectiles`, `volcanic_tsunami` | Section only when the status doesn't contain "safe". Lava flow, ballistic and volcanic tsunami are skipped for Pinatubo. Lava flow and ballistic are otherwise rendered for any volcano; volcanic tsunami only for volcanoes in its `applies_to`, with a warning for the rest. When the lahar, PDC or lava flow status contains "prone", the PDC recommendation is also added to the common statements |
 | Part 3, Step 3: Volcanic tsunami | `volcano_rules.volcanic_tsunami.recommendation` | Recommendation appends a "three natural signs" sentence that neither source template has for volcanic tsunami: it's struck through in the VHAR template (p4) and absent from the HAR templates (p13, p17) |
 | Part 3, Step 4: Ashfall | `volcano_rules.common.ashfall` | Always included |
 | Part 4, §1: Taal | `pdz_danger_zone.special_cases.taal`, `volcano_rules.base_surge` | Island PDZ sentence. Base surge section only for volcanoes named in `base_surge.applies_to` (Taal). The Taal fissure reporting note isn't emitted |
-| Part 4, §1b: Fissures (Muntinlupa) | `earthquake_rules.fissure`; `engine.js`: `_processEarthquakeFissure()` | Suppressed when `fissure_distance_m` is over 1000 (hardcoded). The popup never sets it, so in practice the section appears whenever the fissure cell has a value. The Muntinlupa reporting note isn't emitted |
+| Part 4, §1b: Fissures (Muntinlupa) | `earthquake_rules.fissure`; `engine.js`: `_processEarthquakeFissure()` | Suppressed when the distance to the fissure is over 1000 m (hardcoded). The distance is `fissure_distance_m` when set; otherwise it's read from "Approximately N meters" (or `meter/s`, `m`, `kilometers`, `km`) in the status. A status with no distance, such as "Transected", is rendered. The Muntinlupa reporting note isn't emitted |
 | Part 4, §2: Pinatubo | `pdz_danger_zone.conditions.pinatubo_*`; `engine.js`: `isPinatubo` | Danger-zone wording; no lava flow, ballistic or volcanic tsunami sections. Lahar zones 1 to 5 aren't encoded: the zone text in the table is copied as is |
 | Part 4, §3: Mayon | `volcano_rules.lahar.conditions` | The Highly/Moderately/Least Prone labels are defined but not read; the status is copied as is |
 | Part 4, §4: PAV | `engine.js`: `_getPavStatement()` | Definition sentence, hardcoded in the method. The alluvial-fan lahar warning isn't emitted |
@@ -202,23 +206,23 @@ Most of `rules.js` is text the engine copies into the report. Some of it is refe
 | Part 1: Legacy-format volcanoes (PDZ radii) | `pdz_danger_zone.special_cases` | Kanlaon, Bulusan and Hibok-Hibok 4 km, Mayon 6 km, Pinatubo 10 km |
 | Part 1: No-map volcanoes | none | Not encoded; Bud Dajo, Makaturing and Musuan are treated like any other volcano |
 | Part 2: PAV map status | none | The engine uses whatever status the assessor enters |
-| Part 3: Inclusion rules, VTS | `volcanic_tsunami.applies_to` (Taal, Iriga) | Declared but not checked. Only the Pinatubo skip applies |
+| Part 3: Inclusion rules, VTS | `volcanic_tsunami.applies_to` (Taal, Iriga) | Checked, with a warning for other volcanoes. Part 3 also covers volcano islands, which the list doesn't include yet |
 | Part 3: Inclusion rules, BP | `ballistic_projectiles.applies_to` (Hibok-Hibok, Taal) | Declared but not checked. The list also contradicts Part 3, which requires BP for all active volcanoes; current behaviour (any volcano except Pinatubo) matches Part 3 |
 | Part 3: Inclusion rules, BS | `base_surge.applies_to` (Taal) | Checked |
-| Part 3: Inclusion rules, VFI | `volcano_rules.fissure` | No `applies_to`; rendered for any volcano within 50 km when the fissure cell has a value |
+| Part 3: Inclusion rules, VFI | `volcano_rules.fissure.applies_to` (Taal) | Checked, with a warning for other volcanoes. Rendered only within 50 km |
 | Part 4: PDZ formatting | `pdz_danger_zone.conditions` | Pinatubo, Taal and no-PDZ phrasing as in the LOGIC_GUIDE Step 2 row above |
 | Part 5: Pinatubo | `engine.js`: `isPinatubo` | Skips lava flow, ballistic and volcanic tsunami; lahar zones not encoded |
 | Part 5: Taal | `pdz_danger_zone.special_cases.taal`, `base_surge` | Island PDZ sentence and base surge section. The fissure reporting note isn't emitted |
 
-### Model fields with no popup input
+### Model fields the table doesn't carry
 
-These fields drive documented rules, and the tests set them, but the Report tab has no control for them and `generateReport()` never sets them. Until it does, the rules they gate don't apply to reports generated from the popup.
+These fields drive documented rules but have no column in the assessment table.
 
-| Field | Model | Rule it gates |
-| :--- | :--- | :--- |
-| `fissure_distance_m` | `EarthquakeAssessment` | 1 km fissure trigger (Taal, Muntinlupa) |
-| `outside_watershed` | `VolcanoAssessment` | Distant gatekeeper regardless of distance |
-| `is_island_volcano` | `VolcanoAssessment` | Shorter island text for distant sites |
+| Field | Model | Rule it gates | Where the popup gets it |
+| :--- | :--- | :--- | :--- |
+| `fissure_distance_m` | `EarthquakeAssessment` | 1 km fissure trigger (Taal, Muntinlupa) | Not set; the engine reads the distance from the fissure status text |
+| `outside_watershed` | `VolcanoAssessment` | Distant gatekeeper regardless of distance | "Site is outside the volcano's watershed" checkbox |
+| `is_island_volcano` | `VolcanoAssessment` | Shorter island text for distant sites | "Island volcano" checkbox |
 
 ---
 

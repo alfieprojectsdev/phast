@@ -6,7 +6,7 @@
 
 ---
 
-## Part 1: The Universal Boilerplate
+## Part 1: The universal boilerplate
 *Mandatory statements for **every** report, regardless of hazard status.*
 
 ### 1. Introduction (Choose Source)
@@ -22,7 +22,7 @@
 
 ---
 
-## Part 2: Earthquake Hazards Logic
+## Part 2: Earthquake hazards logic
 *Flow: Check Map → Select Status → Copy Explanation.*
 
 ### A. Active Fault (Ground Rupture)
@@ -66,7 +66,7 @@
 
 ---
 
-## Part 3: Volcano Hazards Logic
+## Part 3: Volcano hazards logic
 *Follow this flowchart to avoid errors.*
 
 ### Step 1: The "50km Gatekeeper"
@@ -123,7 +123,7 @@ Measure distance to the nearest active volcano.
 
 ---
 
-## Part 4: The "Red Flags" (Special Exceptions)
+## Part 4: The "red flags" (special exceptions)
 *Check this list before finalizing any report.*
 
 ### 1. TAAL VOLCANO

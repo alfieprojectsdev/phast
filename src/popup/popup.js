@@ -48,25 +48,34 @@ const _stripSlash = u => u.trim().replace(/\/+$/, '');
  * An explicit Settings value wins outright — if someone typed an address, a
  * silent fallback to a different server would be worse than a clear failure.
  * Otherwise probe the candidates in parallel and take the first that is ready,
- * in preference order rather than whichever wins the race.
+ * in preference order rather than whichever wins the race. If none is ready
+ * but one answered, return that one so its not-ready reason reaches the user
+ * instead of a misleading "cannot reach".
  *
- * @returns {Promise<{base: string|null, tried: string[]}>}
+ * @returns {Promise<{base: string|null, health: object|null, tried: string[]}>}
  */
 async function _resolveEilBase() {
     const res = await new Promise(resolve =>
         chrome.storage.local.get(['eilBaseUrl'], resolve)
     );
     if (res.eilBaseUrl && res.eilBaseUrl.trim()) {
-        return { base: _stripSlash(res.eilBaseUrl), tried: [] };
+        const base = _stripSlash(res.eilBaseUrl);
+        return { base, health: await _probeEil(base), tried: [] };
     }
 
     const cands = DEFAULT_EIL_CANDIDATES.map(_stripSlash);
     // 1.5 s each: this runs on every use, and an unreachable name should not
     // stall the popup while the others are still viable.
     const results = await Promise.all(cands.map(c => _probeEil(c, 1500)));
-    const idx = results.findIndex(r => r.ready);
-    return { base: idx === -1 ? null : cands[idx], tried: cands };
+    let idx = results.findIndex(r => r.ready);
+    if (idx === -1) idx = results.findIndex(r => r.reachable);
+    return idx === -1
+        ? { base: null, health: null, tried: cands }
+        : { base: cands[idx], health: results[idx], tried: cands };
 }
+
+const _escHtml = s => String(s).replace(/[&<>"]/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 document.addEventListener('DOMContentLoaded', () => {
     // Tab Navigation
@@ -323,23 +332,19 @@ async function sendToEILViz() {
     _setEILStatus(statusEl, 'checking', 'Locating EIL server…');
     btn.disabled = true;
 
-    const { base, tried } = await _resolveEilBase();
+    const { base, health, tried } = await _resolveEilBase();
 
     if (!base) {
         btn.disabled = false;
-        const esc0 = s => String(s).replace(/[&<>"]/g, c =>
-            ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
         _setEILStatus(statusEl, 'error', `
             <div class="eil-status-item">
                 <strong>⚠ Cannot reach the EIL server</strong>
-                <div class="eil-detail">Tried: ${tried.map(t => `<code>${esc0(t)}</code>`).join(', ')}</div>
+                <div class="eil-detail">Tried: ${tried.map(t => `<code>${_escHtml(t)}</code>`).join(', ')}</div>
                 <div class="eil-detail">Check that you are on the PHIVOLCS network. If the
                 server has moved, set its address in <strong>Settings → EIL server URL</strong>.</div>
             </div>`);
         return;
     }
-
-    const health = await _probeEil(base);
 
     btn.disabled = false;
 
@@ -352,19 +357,16 @@ async function sendToEILViz() {
 
     // Step 3: not usable — say which of the two failure modes it is. These are
     // server-side problems; nothing the assessor can fix from their own machine.
-    const esc = s => String(s).replace(/[&<>"]/g, c =>
-        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-
     const html = health.reachable
         ? `<div class="eil-status-item">
                <strong>⚠ EIL server is not ready</strong>
-               <div class="eil-detail">${esc(health.reason || 'Readiness check failed.')}</div>
-               <div class="eil-detail">The server at <code>${esc(base)}</code> is running but
+               <div class="eil-detail">${_escHtml(health.reason || 'Readiness check failed.')}</div>
+               <div class="eil-detail">The server at <code>${_escHtml(base)}</code> is running but
                cannot serve assessments. Report this to whoever maintains it.</div>
            </div>`
         : `<div class="eil-status-item">
                <strong>⚠ Cannot reach the EIL server</strong>
-               <div class="eil-detail">No response from <code>${esc(base)}</code>.</div>
+               <div class="eil-detail">No response from <code>${_escHtml(base)}</code>.</div>
                <div class="eil-detail">Check that you are on the PHIVOLCS network. If the
                address is wrong, correct it in <strong>Settings → EIL server URL</strong>.</div>
            </div>`;

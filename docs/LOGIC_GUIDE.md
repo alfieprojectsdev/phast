@@ -4,7 +4,7 @@
 
 *Which of these rules the PHAST engine actually implements is recorded in the doc-to-code mapping in [README.md](../README.md#logic-engine-doc-to-code-mapping).*
 
-*Checked on 2026-10-27 against "HAR Templates (as of June 2024)" (Word edition) and "OHAS Refresher Orientation (2025)". Where those two disagree with older wording, the AV-only template in the Word edition wins.*
+*Checked on 2026-10-27 against "HAR Templates (as of June 2024)" (Word edition) and "OHAS Refresher Orientation (2025)". Where those two disagree with older wording, the AV-only template in the Word edition wins. HAR Templates page numbers refer to the Word edition exported to PDF from Word (32 pages). An older 28-page PDF with the same title paginates differently, and Word can lay out the same file differently on another machine, so check the passage, not just the page.*
 
 ---
 

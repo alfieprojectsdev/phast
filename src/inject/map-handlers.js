@@ -20,6 +20,107 @@ window.PHAST.extBase = window.PHAST.extBase || (function () {
     return src && src.includes(marker) ? src.slice(0, src.indexOf(marker)) : '';
 })();
 
+// --- OVERLAY CROP HELPERS ---
+// Pure functions (no DOM, no Leaflet) so tests/overlay-crop.test.mjs can load
+// this file in a vm and call them directly.
+window.PHAST.crop = (function () {
+    // Affine matrices as PDF.js uses them: [a, b, c, d, e, f]. Same result as
+    // pdfjsLib.Util.transform(m1, m2), i.e. apply m2 first, then m1.
+    function multiply(m1, m2) {
+        return [
+            m1[0] * m2[0] + m1[2] * m2[1],
+            m1[1] * m2[0] + m1[3] * m2[1],
+            m1[0] * m2[2] + m1[2] * m2[3],
+            m1[1] * m2[2] + m1[3] * m2[3],
+            m1[0] * m2[4] + m1[2] * m2[5] + m1[4],
+            m1[1] * m2[4] + m1[3] * m2[5] + m1[5],
+        ];
+    }
+
+    // Where the largest embedded image lands on the rendered page, in canvas
+    // pixels. A map pasted into Word and exported as PDF is one image XObject
+    // drawn into the unit square under the current transform, so tracking the
+    // transform through the operator list gives its exact box, captions and
+    // margins excluded. Returns null when the page has no image.
+    function imageBoxFromOps(fnArray, argsArray, OPS, viewportTransform) {
+        const paintOps = new Set(
+            [OPS.paintImageXObject, OPS.paintInlineImageXObject, OPS.paintJpegXObject]
+                .filter(op => op !== undefined)
+        );
+        let ctm = viewportTransform.slice();
+        const stack = [];
+        let best = null;
+        for (let i = 0; i < fnArray.length; i++) {
+            const fn = fnArray[i];
+            const args = argsArray[i];
+            if (fn === OPS.save) {
+                stack.push(ctm);
+            } else if (fn === OPS.restore) {
+                ctm = stack.pop() || ctm;
+            } else if (fn === OPS.transform) {
+                ctm = multiply(ctm, args);
+            } else if (fn === OPS.paintFormXObjectBegin) {
+                stack.push(ctm);
+                if (args && Array.isArray(args[0])) ctm = multiply(ctm, args[0]);
+            } else if (fn === OPS.paintFormXObjectEnd) {
+                ctm = stack.pop() || ctm;
+            } else if (paintOps.has(fn)) {
+                const xs = [], ys = [];
+                for (const [u, v] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+                    xs.push(ctm[0] * u + ctm[2] * v + ctm[4]);
+                    ys.push(ctm[1] * u + ctm[3] * v + ctm[5]);
+                }
+                const box = {
+                    x: Math.min(...xs), y: Math.min(...ys),
+                    w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys),
+                };
+                if (!best || box.w * box.h > best.w * best.h) best = box;
+            }
+        }
+        return best;
+    }
+
+    // Bounding box of everything that isn't near-white, for PDFs whose map
+    // isn't a single image (scans, vector drawings). `data` is RGBA, as in
+    // ImageData. Returns null for a blank page.
+    function trimMarginBox(data, width, height, threshold = 245) {
+        let minX = width, minY = height, maxX = -1, maxY = -1;
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                const i = (y * width + x) * 4;
+                if (data[i + 3] < 16) continue;
+                if (data[i] < threshold || data[i + 1] < threshold || data[i + 2] < threshold) {
+                    if (x < minX) minX = x;
+                    if (x > maxX) maxX = x;
+                    if (y < minY) minY = y;
+                    if (y > maxY) maxY = y;
+                }
+            }
+        }
+        return maxX < 0 ? null : { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
+    }
+
+    // Whole pixels, inside the canvas. Rounds outward so nothing is shaved off.
+    function clampRect(r, width, height) {
+        const x0 = Math.max(0, Math.floor(r.x)), y0 = Math.max(0, Math.floor(r.y));
+        const x1 = Math.min(width, Math.ceil(r.x + r.w)), y1 = Math.min(height, Math.ceil(r.y + r.h));
+        return { x: x0, y: y0, w: Math.max(0, x1 - x0), h: Math.max(0, y1 - y0) };
+    }
+
+    // The crop a PDF page starts with: the largest embedded image if it is a
+    // real part of the page (at least 5% of it), else the non-white area, else
+    // the whole page. Returns null when the suggestion would be the whole page.
+    function suggestPdfCrop(imageBox, trimBox, width, height) {
+        const area = width * height;
+        const pick = [imageBox, trimBox]
+            .map(b => b && clampRect(b, width, height))
+            .find(b => b && b.w * b.h >= area * 0.05);
+        return pick && pick.w * pick.h < area * 0.98 ? pick : null;
+    }
+
+    return { multiply, imageBoxFromOps, trimMarginBox, clampRect, suggestPdfCrop };
+})();
+
 // --- MAP OVERLAY LOGIC ---
 // --- MAP OVERLAY LOGIC ---
 window.PHAST.overlayVicinityMap = function () {
@@ -31,17 +132,35 @@ window.PHAST.overlayVicinityMap = function () {
     }
 
     // Remove previous overlay if any
-    if (window._vicinityOverlay) {
-        map.removeLayer(window._vicinityOverlay);
-        window._vicinityOverlay = null;
-    }
-    if (window._vicinityPanel) {
-        window._vicinityPanel.remove();
-        window._vicinityPanel = null;
-    }
-    if (window._stretchHandles) {
-        window._stretchHandles.forEach(h => { if (h._map) map.removeLayer(h); });
-        window._stretchHandles = null;
+    removeVicinityOverlay();
+
+    // Stretch handles go first: once the overlay is off the map, removing a
+    // handle throws inside leaflet-distortableimage (its _unbindListeners reads
+    // state the overlay's removal has already cleared), which used to abort a
+    // second "Overlay Vicinity Map" halfway through.
+    function removeVicinityOverlay() {
+        if (window._stretchHandles) {
+            window._stretchHandles.forEach(h => { if (h._map) map.removeLayer(h); });
+            window._stretchHandles = null;
+        }
+        if (window._vicinityOverlay) {
+            // The library leaves its own corner handles on the map (its
+            // removeHooks loops over the handle names, not the layers), and a
+            // handle can only be removed while the overlay is still on the map.
+            // So: switch editing off, take the handle groups off, then remove
+            // the overlay, whose onRemove finds editing already disabled.
+            const editing = window._vicinityOverlay.editing;
+            if (editing) {
+                if (editing.enabled()) editing.disable();
+                Object.values(editing._handles || {}).forEach(g => { if (map.hasLayer(g)) map.removeLayer(g); });
+            }
+            map.removeLayer(window._vicinityOverlay);
+            window._vicinityOverlay = null;
+        }
+        if (window._vicinityPanel) {
+            window._vicinityPanel.remove();
+            window._vicinityPanel = null;
+        }
     }
 
     // Find vicinity map attachments (PDF, JPG, PNG)
@@ -104,19 +223,208 @@ window.PHAST.overlayVicinityMap = function () {
     }
 
     function processChosen(chosen) {
-        // Load Dependencies and Show Overlay
+        // Load dependencies, let the assessor crop, then show the overlay.
         loadDependencies()
-            .then(() => {
-                if (chosen.ext === '.pdf') {
-                    renderPdf(chosen.url, chosen.name);
-                } else {
-                    fetch(chosen.url)
-                        .then(res => res.blob())
-                        .then(blob => showOverlay(URL.createObjectURL(blob), chosen.name))
-                        .catch(err => alert('❌ Error loading image: ' + err.message));
-                }
+            .catch(() => { throw new Error('Could not load distortable image library.'); })
+            .then(() => chosen.ext === '.pdf' ? renderPdfPage(chosen.url) : loadImageSource(chosen.url))
+            .then(source => showCropModal(source, chosen.name).then(choice => {
+                if (!choice) return; // cancelled
+                showOverlay(choice.whole ? source.wholeUrl() : cropToDataUrl(source.canvas, choice.rect), chosen.name);
+            }))
+            .catch(err => alert('Error loading vicinity map: ' + err.message));
+    }
+
+    // { canvas, suggested, wholeUrl } for an image attachment. The image is
+    // fetched to a blob first, so drawing it on a canvas never taints it.
+    // "Use whole image" overlays the original blob, exactly as before cropping
+    // existed.
+    function loadImageSource(url) {
+        return fetch(url)
+            .then(res => {
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                return res.blob();
             })
-            .catch(() => alert('⚠️ Could not load distortable image library.'));
+            .then(blob => new Promise((resolve, reject) => {
+                const objectUrl = URL.createObjectURL(blob);
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.naturalWidth;
+                    canvas.height = img.naturalHeight;
+                    canvas.getContext('2d').drawImage(img, 0, 0);
+                    resolve({ canvas, suggested: null, wholeUrl: () => objectUrl });
+                };
+                img.onerror = () => reject(new Error('the file is not a readable image'));
+                img.src = objectUrl;
+            }));
+    }
+
+    // Cut the selected rectangle out of the full-resolution canvas.
+    function cropToDataUrl(canvas, rect) {
+        const out = document.createElement('canvas');
+        out.width = rect.w;
+        out.height = rect.h;
+        out.getContext('2d').drawImage(canvas, rect.x, rect.y, rect.w, rect.h, 0, 0, rect.w, rect.h);
+        return out.toDataURL('image/png');
+    }
+
+    // Lets the assessor drag a rectangle over the part of the map to overlay.
+    // Resolves { rect } in source pixels, { whole: true }, or null if cancelled.
+    function showCropModal(source, fileName) {
+        return new Promise(resolve => {
+            const existing = document.getElementById('phast-crop-modal');
+            if (existing) existing.remove();
+
+            const srcW = source.canvas.width, srcH = source.canvas.height;
+            const fit = Math.min(
+                Math.min(window.innerWidth * 0.9 - 40, 1100) / srcW,
+                (window.innerHeight * 0.92 - 150) / srcH,
+                1
+            );
+            const viewW = Math.max(1, Math.round(srcW * fit)), viewH = Math.max(1, Math.round(srcH * fit));
+            const toView = r => ({ x: r.x * fit, y: r.y * fit, w: r.w * fit, h: r.h * fit });
+
+            const modal = document.createElement('div');
+            modal.id = 'phast-crop-modal';
+            modal.style.cssText = `
+                position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 11000;
+                display: flex; justify-content: center; align-items: center; font-family: sans-serif;
+            `;
+            const panel = document.createElement('div');
+            panel.style.cssText = `
+                background: white; padding: 16px 20px; border-radius: 8px; max-width: 94vw;
+                box-shadow: 0 4px 16px rgba(0,0,0,0.3); display: flex; flex-direction: column; gap: 10px;
+            `;
+            const title = document.createElement('div');
+            title.style.cssText = 'font-weight: bold;';
+            title.textContent = 'Crop vicinity map: ' + fileName;
+            const hint = document.createElement('div');
+            hint.style.cssText = 'font-size: 12px; color: #555;';
+            hint.textContent = (source.suggested
+                ? 'The selection starts on the map image found in the PDF. '
+                : '') + 'Drag to select the part to overlay; drag inside the selection to move it, or its corners to resize. Enter applies, Esc cancels.';
+
+            const stage = document.createElement('div');
+            stage.style.cssText = `position: relative; width: ${viewW}px; height: ${viewH}px; overflow: hidden;
+                cursor: crosshair; user-select: none; touch-action: none; align-self: center; background: #eee;`;
+            const preview = document.createElement('canvas');
+            const dpr = window.devicePixelRatio || 1;
+            preview.width = Math.round(viewW * dpr);
+            preview.height = Math.round(viewH * dpr);
+            preview.style.cssText = `width: ${viewW}px; height: ${viewH}px; display: block;`;
+            preview.getContext('2d').drawImage(source.canvas, 0, 0, preview.width, preview.height);
+
+            const sel = document.createElement('div');
+            sel.style.cssText = `position: absolute; box-sizing: border-box; border: 2px dashed #e74c3c;
+                box-shadow: 0 0 0 9999px rgba(0,0,0,0.45); cursor: move;`;
+            ['nw', 'ne', 'sw', 'se'].forEach(corner => {
+                const h = document.createElement('div');
+                h.dataset.corner = corner;
+                h.style.cssText = `position: absolute; width: 12px; height: 12px; background: #e74c3c;
+                    border: 2px solid white; box-sizing: border-box;
+                    ${corner[0] === 'n' ? 'top' : 'bottom'}: -7px; ${corner[1] === 'w' ? 'left' : 'right'}: -7px;
+                    cursor: ${corner === 'nw' || corner === 'se' ? 'nwse' : 'nesw'}-resize;`;
+                sel.appendChild(h);
+            });
+            stage.appendChild(preview);
+            stage.appendChild(sel);
+
+            const size = document.createElement('div');
+            size.style.cssText = 'font-size: 12px; color: #555; min-height: 1em;';
+
+            const buttons = document.createElement('div');
+            buttons.style.cssText = 'display: flex; justify-content: flex-end; gap: 8px;';
+            const mkBtn = (label, primary) => {
+                const b = document.createElement('button');
+                b.textContent = label;
+                b.style.cssText = `padding: 8px 14px; border-radius: 4px; cursor: pointer; border: 1px solid ${primary ? '#2c3e50' : '#bbb'};
+                    background: ${primary ? '#2c3e50' : '#f4f4f4'}; color: ${primary ? 'white' : '#222'};`;
+                return b;
+            };
+            const cancelBtn = mkBtn('Cancel'), wholeBtn = mkBtn('Use whole image'), applyBtn = mkBtn('Apply crop', true);
+            buttons.append(cancelBtn, wholeBtn, applyBtn);
+
+            panel.append(title, hint, stage, size, buttons);
+            modal.appendChild(panel);
+            document.body.appendChild(modal);
+
+            // Selection in view (CSS) pixels.
+            let rect = source.suggested ? toView(source.suggested) : { x: 0, y: 0, w: viewW, h: viewH };
+            const MIN = 8;
+            const draw = () => {
+                Object.assign(sel.style, { left: rect.x + 'px', top: rect.y + 'px', width: rect.w + 'px', height: rect.h + 'px' });
+                const r = toSource();
+                size.textContent = `Selection: ${r.w} × ${r.h} px of ${srcW} × ${srcH}`;
+                applyBtn.disabled = rect.w < MIN || rect.h < MIN;
+            };
+            const toSource = () => window.PHAST.crop.clampRect(
+                { x: rect.x / fit, y: rect.y / fit, w: rect.w / fit, h: rect.h / fit }, srcW, srcH);
+            const point = e => {
+                const b = stage.getBoundingClientRect();
+                return { x: Math.min(Math.max(e.clientX - b.left, 0), viewW), y: Math.min(Math.max(e.clientY - b.top, 0), viewH) };
+            };
+
+            let drag = null;
+            stage.addEventListener('pointerdown', e => {
+                e.preventDefault();
+                const p = point(e);
+                const corner = e.target.dataset && e.target.dataset.corner;
+                if (corner) {
+                    // Resize: the opposite corner stays put.
+                    const ax = corner[1] === 'w' ? rect.x + rect.w : rect.x;
+                    const ay = corner[0] === 'n' ? rect.y + rect.h : rect.y;
+                    drag = { mode: 'draw', ax, ay };
+                } else if (e.target === sel && (rect.w < viewW - 1 || rect.h < viewH - 1)) {
+                    // Moving only makes sense for a selection smaller than the
+                    // image; when it covers everything (the starting state for
+                    // images), a drag draws a new one instead.
+                    drag = { mode: 'move', dx: p.x - rect.x, dy: p.y - rect.y };
+                } else {
+                    drag = { mode: 'draw', ax: p.x, ay: p.y };
+                    rect = { x: p.x, y: p.y, w: 0, h: 0 };
+                }
+                stage.setPointerCapture(e.pointerId);
+                draw();
+            });
+            stage.addEventListener('pointermove', e => {
+                if (!drag) return;
+                const p = point(e);
+                if (drag.mode === 'move') {
+                    rect.x = Math.min(Math.max(p.x - drag.dx, 0), viewW - rect.w);
+                    rect.y = Math.min(Math.max(p.y - drag.dy, 0), viewH - rect.h);
+                } else {
+                    rect = {
+                        x: Math.min(drag.ax, p.x), y: Math.min(drag.ay, p.y),
+                        w: Math.abs(p.x - drag.ax), h: Math.abs(p.y - drag.ay),
+                    };
+                }
+                draw();
+            });
+            const endDrag = () => { drag = null; };
+            stage.addEventListener('pointerup', endDrag);
+            stage.addEventListener('pointercancel', endDrag);
+
+            const close = result => {
+                document.removeEventListener('keydown', onKey, true);
+                modal.remove();
+                resolve(result);
+            };
+            const apply = () => {
+                if (applyBtn.disabled) return;
+                const r = toSource();
+                // A selection that is the whole image is the same as not cropping.
+                close(r.w >= srcW && r.h >= srcH ? { whole: true } : { rect: r });
+            };
+            const onKey = e => {
+                if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(null); }
+                else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); apply(); }
+            };
+            document.addEventListener('keydown', onKey, true);
+            cancelBtn.addEventListener('click', () => close(null));
+            wholeBtn.addEventListener('click', () => close({ whole: true }));
+            applyBtn.addEventListener('click', apply);
+            draw();
+        });
     }
 
     function showSelectionModal(options, callback) {
@@ -572,47 +880,54 @@ window.PHAST.overlayVicinityMap = function () {
         applyOpacity(0.5);
         overlay.once('load', () => applyOpacity(0.5));
 
-        panel.querySelector('#_vm_close').addEventListener('click', function () {
-            map.removeLayer(overlay);
-            panel.remove();
-            if (window._stretchHandles) {
-                window._stretchHandles.forEach(h => map.removeLayer(h));
-                window._stretchHandles = null;
-            }
-            window._vicinityOverlay = null;
-            window._vicinityPanel = null;
+        panel.querySelector('#_vm_close').addEventListener('click', removeVicinityOverlay);
+    }
+
+    function loadPdfJs() {
+        if (typeof pdfjsLib !== 'undefined') return Promise.resolve();
+        return new Promise((resolve, reject) => {
+            const s = document.createElement('script');
+            s.src = `${window.PHAST.extBase}src/vendor/pdfjs/pdf.min.js`;
+            s.onload = () => {
+                pdfjsLib.GlobalWorkerOptions.workerSrc = `${window.PHAST.extBase}src/vendor/pdfjs/pdf.worker.min.js`;
+                resolve();
+            };
+            s.onerror = () => reject(new Error('could not load PDF.js'));
+            document.head.appendChild(s);
         });
     }
 
-    function renderPdf(url, name) {
-        if (typeof pdfjsLib === 'undefined') {
-            // Need to load PDF.js first if not loaded (simpler to rely on internal logic or add alert in V1)
-            // But let's assume it's loaded by the main branch block for now or add a quick loader check
-            let s = document.createElement('script');
-            s.src = `${window.PHAST.extBase}src/vendor/pdfjs/pdf.min.js`;
-            s.onload = function () {
-                pdfjsLib.GlobalWorkerOptions.workerSrc = `${window.PHAST.extBase}src/vendor/pdfjs/pdf.worker.min.js`;
-                renderPdf(url, name);
-            };
-            document.head.appendChild(s);
-            return;
-        }
-
-        fetch(url)
-            .then(res => res.arrayBuffer())
+    // Page 1 rendered at 2x, plus a suggested crop: the embedded map image if
+    // the page has one, otherwise the area inside the white margins.
+    function renderPdfPage(url) {
+        return loadPdfJs()
+            .then(() => fetch(url))
+            .then(res => {
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                return res.arrayBuffer();
+            })
             .then(buf => pdfjsLib.getDocument({ data: buf }).promise)
             .then(pdf => pdf.getPage(1))
             .then(page => {
-                let scale = 2;
-                let viewport = page.getViewport({ scale: scale });
-                let canvas = document.createElement('canvas');
-                canvas.width = viewport.width; canvas.height = viewport.height;
-                let ctx = canvas.getContext('2d');
-                return page.render({ canvasContext: ctx, viewport: viewport }).promise.then(() => {
-                    showOverlay(canvas.toDataURL('image/png'), name);
-                });
-            })
-            .catch(err => alert('❌ Error rendering PDF: ' + err.message));
+                const viewport = page.getViewport({ scale: 2 });
+                const canvas = document.createElement('canvas');
+                canvas.width = Math.floor(viewport.width);
+                canvas.height = Math.floor(viewport.height);
+                const ctx = canvas.getContext('2d');
+                return page.render({ canvasContext: ctx, viewport }).promise
+                    .then(() => page.getOperatorList())
+                    .then(ops => {
+                        const crop = window.PHAST.crop;
+                        const imageBox = crop.imageBoxFromOps(ops.fnArray, ops.argsArray, pdfjsLib.OPS, viewport.transform);
+                        const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                        const trimBox = crop.trimMarginBox(pixels.data, canvas.width, canvas.height);
+                        return {
+                            canvas,
+                            suggested: crop.suggestPdfCrop(imageBox, trimBox, canvas.width, canvas.height),
+                            wholeUrl: () => canvas.toDataURL('image/png'),
+                        };
+                    });
+            });
     }
 };
 

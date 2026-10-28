@@ -70,8 +70,19 @@
                     <td>Safe; Approximately 5.2 km East of the West Valley Fault</td>
                     <td>121.05, 14.60</td>
                     <td>
-                        <span class="text-primary">Vicinity Map.jpg</span>
-                        <a href="https://via.placeholder.com/800x600.png?text=Vicinity+Map" download>Download</a>
+                        <span class="text-primary">Vicinity Map.png</span>
+                        <a href="fixtures/vicinity-map.png" download>Download</a>
+                    </td>
+                </tr>
+                <tr>
+                    <td><input type="checkbox"></td>
+                    <td>Lahar</td>
+                    <td>Safe</td>
+                    <td>121.05, 14.60</td>
+                    <td>
+                        <!-- Map pasted into Word with 1 in. margins and a caption, then exported to PDF -->
+                        <span class="text-primary">Vicinity Map (Word export).pdf</span>
+                        <a href="fixtures/vicinity-map-word.pdf" download>Download</a>
                     </td>
                 </tr>
                 <tr>
@@ -107,23 +118,33 @@
         <h3>Extension Simulation Controls</h3>
         <button onclick="simulateOverlay()">Simulate Overlay Vicinity Map</button>
         <button onclick="simulateKML()">Simulate Import KML</button>
+        <button onclick="loadHandlers()">Load map handlers (without the extension)</button>
         <p><em>To test properly, load the unpacked extension in Chrome and allow it to run on file:// URLs or serve this
                 page.</em></p>
     </div>
 
     <script>
         function simulateOverlay() {
-            if (window.PHAT && window.PHAT.overlayVicinityMap) {
-                window.PHAT.overlayVicinityMap();
+            if (window.PHAST && window.PHAST.overlayVicinityMap) {
+                window.PHAST.overlayVicinityMap();
             } else {
-                alert('PHAT not loaded. (Did content script inject it?)');
+                alert('PHAST not loaded. Load the extension, or use "Load map handlers" when serving this page over HTTP.');
             }
         }
+        // For trying the map tools without installing the extension: serve the repo
+        // root over HTTP (fetch does not work from file://) and open tests/mock-page.html.
+        function loadHandlers() {
+            if (window.PHAST && window.PHAST.overlayVicinityMap) return alert('Map handlers already loaded.');
+            const s = document.createElement('script');
+            s.src = '../src/inject/map-handlers.js';
+            s.onerror = () => alert('Could not load ../src/inject/map-handlers.js');
+            document.head.appendChild(s);
+        }
         function simulateKML() {
-            if (window.PHAT && window.PHAT.importKML) {
-                window.PHAT.importKML();
+            if (window.PHAST && window.PHAST.importKML) {
+                window.PHAST.importKML();
             } else {
-                alert('PHAT not loaded.');
+                alert('PHAST not loaded.');
             }
         }
     </script>

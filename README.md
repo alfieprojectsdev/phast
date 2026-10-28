@@ -27,7 +27,7 @@ The popup also looks for request coordinates. It takes the first pair of DMS coo
 
 These buttons call functions that PHAST injects into the page's own JavaScript context, so they work only on a page with the HAS Admin Leaflet map (`map`, `L` and `drawnItems` globals).
 
-- Overlay Vicinity Map finds image and PDF attachments on the request, prefers ones whose name or row mentions "vicinity", "site map" or "location map", and asks you to pick if there's more than one. The overlay can be dragged, scaled, rotated, and stretched along either of its own axes with the edge handles. The control panel has an opacity slider, a blink toggle and nudge buttons. For a PDF, only page 1 is rendered and overlaid.
+- Overlay Vicinity Map finds image and PDF attachments on the request, prefers ones whose name or row mentions "vicinity", "site map" or "location map", and asks you to pick if there's more than one. Before anything goes on the map, a crop window shows the image: drag a rectangle over the part you want, or choose "Use whole image". The crop is cut from the full-resolution image. For a PDF, only page 1 is used, and the rectangle starts on the map image pasted into the page, so Word's white margins and any caption are already left out; if the page has no such image, it starts inside the white margins instead. The overlay can then be dragged, scaled, rotated, and stretched along either of its own axes with the edge handles. The control panel has an opacity slider, a blink toggle, nudge buttons and Remove Overlay. Running Overlay Vicinity Map again replaces the current overlay.
 - Import KML/KMZ fetches every KML and KMZ attached to the request, converts the placemarks to GeoJSON and adds them to the map's drawn layer, so they're also what "Send to EIL-Viz" sends.
 - Check Feature in ULAP opens the ULAP portal in a new tab, centred on the coordinates in the first row of the assessment table.
 - Copy Coords / KMZ Link centres the map on the first DMS coordinates in a Remarks cell, or if there are none, imports the request's KML/KMZ. Despite the label it doesn't copy anything.
@@ -156,12 +156,12 @@ There's no build step and no `package.json`. Load the folder unpacked, edit, and
 ### Tests
 
 ```
-node --test tests/har-engine.test.mjs
+node --test
 ```
 
-83 tests, covering the HAR engine, the table-row mapping in `table-row.js` and the shape of `rules.js`. Nothing tests the popup, the scraper or the map handlers. Tested on Node 24.19.
+101 tests in `tests/*.test.mjs`: the HAR engine, the table-row mapping in `table-row.js`, the shape of `rules.js`, and the overlay crop helpers in `map-handlers.js` (`window.PHAST.crop`). The crop tests load `map-handlers.js` in a Node vm and read the operator codes from the vendored PDF.js. Nothing tests the popup, the scraper or the map handlers' DOM and Leaflet code. Tested on Node 24.19.
 
-`tests/mock-page.html` is a stand-in HAS Admin page with a Leaflet map and two attachments, for trying the map tools. The content scripts also match `file://` URLs, so open it from disk after turning on "Allow access to file URLs" in the extension's details. It loads Leaflet from unpkg, so it needs internet access. Its table doesn't have the column layout the Report tab reads.
+`tests/mock-page.html` is a stand-in HAS Admin page with a Leaflet map and three attachments, for trying the map tools: a synthetic vicinity map (`tests/fixtures/vicinity-map.png`), the same map pasted into a Word-style A4 page with margins and a caption (`tests/fixtures/vicinity-map-word.pdf`), and a KML. The fixtures are generated, not real places. Fetching attachments doesn't work from `file://`, so serve the repository root over HTTP (for example `python -m http.server 8765`) and open `http://localhost:8765/tests/mock-page.html`. With the extension installed, its content scripts run there only if the address is added to the manifest; without it, the page's "Load map handlers" button loads `src/inject/map-handlers.js` directly. The page loads Leaflet from unpkg, so it needs internet access. Its table doesn't have the column layout the Report tab reads.
 
 ### Releasing
 

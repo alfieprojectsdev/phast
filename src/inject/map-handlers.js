@@ -131,8 +131,8 @@ window.PHAST.overlayVicinityMap = function () {
         return;
     }
 
-    // Remove previous overlay if any
-    removeVicinityOverlay();
+    // The previous overlay is removed in showOverlay, only once the new one is
+    // ready, so cancelling the picker or the crop keeps the aligned overlay.
 
     // Stretch handles go first: once the overlay is off the map, removing a
     // handle throws inside leaflet-distortableimage (its _unbindListeners reads
@@ -228,6 +228,8 @@ window.PHAST.overlayVicinityMap = function () {
             .catch(() => { throw new Error('Could not load distortable image library.'); })
             .then(() => chosen.ext === '.pdf' ? renderPdfPage(chosen.url) : loadImageSource(chosen.url))
             .then(source => showCropModal(source, chosen.name).then(choice => {
+                // The original image blob is only needed for "Use whole image".
+                if (!(choice && choice.whole) && source.release) source.release();
                 if (!choice) return; // cancelled
                 showOverlay(choice.whole ? source.wholeUrl() : cropToDataUrl(source.canvas, choice.rect), chosen.name);
             }))
@@ -252,7 +254,11 @@ window.PHAST.overlayVicinityMap = function () {
                     canvas.width = img.naturalWidth;
                     canvas.height = img.naturalHeight;
                     canvas.getContext('2d').drawImage(img, 0, 0);
-                    resolve({ canvas, suggested: null, wholeUrl: () => objectUrl });
+                    resolve({
+                        canvas, suggested: null,
+                        wholeUrl: () => objectUrl,
+                        release: () => URL.revokeObjectURL(objectUrl),
+                    });
                 };
                 img.onerror = () => reject(new Error('the file is not a readable image'));
                 img.src = objectUrl;
@@ -277,8 +283,8 @@ window.PHAST.overlayVicinityMap = function () {
 
             const srcW = source.canvas.width, srcH = source.canvas.height;
             const fit = Math.min(
-                Math.min(window.innerWidth * 0.9 - 40, 1100) / srcW,
-                (window.innerHeight * 0.92 - 150) / srcH,
+                Math.min(Math.max(window.innerWidth * 0.9 - 40, 160), 1100) / srcW,
+                Math.max(window.innerHeight * 0.92 - 150, 120) / srcH,
                 1
             );
             const viewW = Math.max(1, Math.round(srcW * fit)), viewH = Math.max(1, Math.round(srcH * fit));
@@ -357,7 +363,10 @@ window.PHAST.overlayVicinityMap = function () {
                 size.textContent = `Selection: ${r.w} × ${r.h} px of ${srcW} × ${srcH}`;
                 applyBtn.disabled = rect.w < MIN || rect.h < MIN;
             };
-            const toSource = () => window.PHAST.crop.clampRect(
+            // While the suggested selection is untouched, use it exactly: going
+            // through view pixels and back can add a row or column.
+            const initial = rect;
+            const toSource = () => rect === initial && source.suggested ? source.suggested : window.PHAST.crop.clampRect(
                 { x: rect.x / fit, y: rect.y / fit, w: rect.w / fit, h: rect.h / fit }, srcW, srcH);
             const point = e => {
                 const b = stage.getBoundingClientRect();
@@ -380,7 +389,7 @@ window.PHAST.overlayVicinityMap = function () {
                     // images), a drag draws a new one instead.
                     drag = { mode: 'move', dx: p.x - rect.x, dy: p.y - rect.y };
                 } else {
-                    drag = { mode: 'draw', ax: p.x, ay: p.y };
+                    drag = { mode: 'draw', ax: p.x, ay: p.y, prev: rect };
                     rect = { x: p.x, y: p.y, w: 0, h: 0 };
                 }
                 stage.setPointerCapture(e.pointerId);
@@ -390,8 +399,12 @@ window.PHAST.overlayVicinityMap = function () {
                 if (!drag) return;
                 const p = point(e);
                 if (drag.mode === 'move') {
-                    rect.x = Math.min(Math.max(p.x - drag.dx, 0), viewW - rect.w);
-                    rect.y = Math.min(Math.max(p.y - drag.dy, 0), viewH - rect.h);
+                    // A new object, so toSource sees the selection has changed.
+                    rect = {
+                        x: Math.min(Math.max(p.x - drag.dx, 0), viewW - rect.w),
+                        y: Math.min(Math.max(p.y - drag.dy, 0), viewH - rect.h),
+                        w: rect.w, h: rect.h,
+                    };
                 } else {
                     rect = {
                         x: Math.min(drag.ax, p.x), y: Math.min(drag.ay, p.y),
@@ -400,7 +413,15 @@ window.PHAST.overlayVicinityMap = function () {
                 }
                 draw();
             });
-            const endDrag = () => { drag = null; };
+            // A click without a drag would leave a 0 x 0 selection; keep the
+            // previous one instead (a stray click shouldn't lose the PDF suggestion).
+            const endDrag = () => {
+                if (drag && drag.prev && (rect.w < MIN || rect.h < MIN)) {
+                    rect = drag.prev;
+                    draw();
+                }
+                drag = null;
+            };
             stage.addEventListener('pointerup', endDrag);
             stage.addEventListener('pointercancel', endDrag);
 
@@ -425,6 +446,13 @@ window.PHAST.overlayVicinityMap = function () {
             applyBtn.addEventListener('click', apply);
             draw();
         });
+    }
+
+    // Attachment names come from whoever filed the request, so they are text,
+    // never markup.
+    function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, c =>
+            ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     }
 
     function showSelectionModal(options, callback) {
@@ -456,8 +484,8 @@ window.PHAST.overlayVicinityMap = function () {
                         background: #f9f9f9; cursor: pointer; display: flex; justify-content: space-between; align-items: center;
                     ">
                         <div>
-                            <strong>${opt.name}</strong><br>
-                            <small style="color: #666;">Uploaded: ${opt.date}</small>
+                            <strong>${escapeHtml(opt.name)}</strong><br>
+                            <small style="color: #666;">Uploaded: ${escapeHtml(opt.date)}</small>
                         </div>
                         <div style="color: #007bff;">Select &rarr;</div>
                     </button>
@@ -688,6 +716,7 @@ window.PHAST.overlayVicinityMap = function () {
     }
 
     function showOverlay(imageUrl, fileName) {
+        removeVicinityOverlay();
         let bounds = map.getBounds();
         let center = map.getCenter();
         let latSpan = (bounds.getNorth() - bounds.getSouth()) * 0.35;
@@ -919,11 +948,17 @@ window.PHAST.overlayVicinityMap = function () {
                     .then(ops => {
                         const crop = window.PHAST.crop;
                         const imageBox = crop.imageBoxFromOps(ops.fnArray, ops.argsArray, pdfjsLib.OPS, viewport.transform);
-                        const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                        const trimBox = crop.trimMarginBox(pixels.data, canvas.width, canvas.height);
+                        // The full-page pixel scan only runs when the embedded
+                        // image doesn't settle the suggestion.
+                        let suggested = crop.suggestPdfCrop(imageBox, null, canvas.width, canvas.height);
+                        if (!suggested) {
+                            const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                            const trimBox = crop.trimMarginBox(pixels.data, canvas.width, canvas.height);
+                            suggested = crop.suggestPdfCrop(null, trimBox, canvas.width, canvas.height);
+                        }
                         return {
                             canvas,
-                            suggested: crop.suggestPdfCrop(imageBox, trimBox, canvas.width, canvas.height),
+                            suggested,
                             wholeUrl: () => canvas.toDataURL('image/png'),
                         };
                     });

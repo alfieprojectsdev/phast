@@ -8,12 +8,13 @@ import assert from 'node:assert/strict';
 
 import { HAZARD_RULES_SCHEMA } from '../src/lib/har-engine/rules.js';
 import { DecisionEngine } from '../src/lib/har-engine/engine.js';
-import { assessmentFromRow, findCategoryRow, COLUMNS } from '../src/lib/har-engine/table-row.js';
+import { assessmentFromRow, findCategoryRow, parseSiteLocation, COLUMNS } from '../src/lib/har-engine/table-row.js';
 import {
     Assessment,
     AssessmentCategory,
     EarthquakeAssessment,
     VolcanoAssessment,
+    isSafeStatus,
 } from '../src/lib/har-engine/models.js';
 
 const engine = new DecisionEngine(HAZARD_RULES_SCHEMA);
@@ -239,13 +240,16 @@ describe('Volcano — PDZ no-PDZ-within-10km fallback', () => {
     const UNKNOWN_CLOSE = 'Approximately 5 kilometers North of Unnamed Volcano';
     const UNKNOWN_FAR   = 'Approximately 15 kilometers North of Unnamed Volcano';
 
-    test('Unknown volcano < 10 km → generic no-PDZ fallback text emitted', () => {
+    test('Unknown volcano < 10 km with no hazard map → no-PDZ fallback text emitted', () => {
+        const out = engine.processAssessment(makeVolcanoAssessment(UNKNOWN_CLOSE, { av_has_hazard_map: false }));
+        const combined = out.common_statements.map(s => s.explanation).join(' ');
+        assert.ok(combined.includes('delineated 10-kilometer radius'), 'Expected no-PDZ fallback text');
+    });
+
+    test('Unknown volcano < 10 km with a hazard map (default) → no fallback text', () => {
         const out = engine.processAssessment(makeVolcanoAssessment(UNKNOWN_CLOSE));
         const combined = out.common_statements.map(s => s.explanation).join(' ');
-        assert.ok(
-            combined.includes('10-kilometer radius') || combined.includes('highly prone to eruptive'),
-            'Expected no-PDZ fallback text for close unknown volcano'
-        );
+        assert.ok(!combined.includes('delineated 10-kilometer radius'));
     });
 
     test('Unknown volcano > 10 km → no PDZ fallback, no section', () => {
@@ -340,13 +344,145 @@ describe('rules.js — schema integrity', () => {
         assert.ok(HAZARD_RULES_SCHEMA.earthquake_rules.tsunami.conditions.no_data_low_lying_coastal?.template);
     });
 
-    test('volcanic_tsunami recommendation includes three natural signs', () => {
-        const rec = HAZARD_RULES_SCHEMA.volcano_rules.volcanic_tsunami.recommendation;
-        assert.ok(rec.includes('three natural signs') || rec.includes('ground shaking'));
+    test('volcanic_tsunami recommendation matches the template (no three-signs sentence)', () => {
+        assert.equal(HAZARD_RULES_SCHEMA.volcano_rules.volcanic_tsunami.recommendation,
+            'Tsunami threat related to the volcanic unrests can be addressed by community preparedness and tsunami evacuation plan, with special focus on shoreline communities.');
     });
 
     test('volcano fissure applies_to is Taal only', () => {
         assert.deepEqual(HAZARD_RULES_SCHEMA.volcano_rules.fissure.applies_to, ['Taal']);
+    });
+
+    test('EIL and tsunami have no explanation (the templates give only a recommendation)', () => {
+        assert.equal(HAZARD_RULES_SCHEMA.earthquake_rules.earthquake_induced_landslide.explanation, undefined);
+        assert.equal(HAZARD_RULES_SCHEMA.earthquake_rules.tsunami.explanation, undefined);
+    });
+
+    test('volcano hazard text follows the 2025 AV-only template', () => {
+        const v = HAZARD_RULES_SCHEMA.volcano_rules;
+        assert.match(v.lava_flow.explanation, /can burn and bury land/);
+        assert.match(v.pyroclastic_density_current.explanation, /due to burning, impact force, abrasion, asphyxiation/);
+        assert.equal(v.pyroclastic_density_current.recommendation,
+            'Avoidance is recommended for site/sites that may potentially be affected by pyroclastic density currents (PDCs) and lava flows.');
+        assert.equal(v.lava_flow.recommendation, v.pyroclastic_density_current.recommendation);
+        assert.match(v.ballistic_projectiles.explanation, /when hitting ground\.$/);
+        assert.match(v.lahar.explanation, /damage to built environment, agriculture, livestock/);
+        assert.match(v.common.ashfall.template, /agricultural, and property damages, and negative health impacts\.$/);
+        for (const text of [v.lahar.explanation, v.pyroclastic_density_current.explanation, v.common.ashfall.template]) {
+            assert.ok(!/livestocks|agricultures|aircraft/.test(text), text);
+        }
+    });
+});
+
+// ─── Safe vs compound statuses ────────────────────────────────────────────────
+
+describe('isSafeStatus — compound statuses describe a hazard', () => {
+    test('plain safe statuses are safe', () => {
+        for (const s of ['Safe', 'safe', 'Safe; Approximately 2.1 kilometers North of the West Valley Fault']) {
+            assert.equal(isSafeStatus(s), true, s);
+        }
+    });
+
+    test('statuses that also name a susceptibility or proneness are not safe', () => {
+        for (const s of ['Largely Safe, Partly Susceptible', 'Partly Safe, Largely Susceptible',
+            'Partly Safe, Partly Susceptible', 'Largely Safe, Partly Least Susceptible',
+            'Zone 4 (safe from lahars but susceptible to sediment-laden stream flows)', 'Partly safe, partly prone']) {
+            assert.equal(isSafeStatus(s), false, s);
+        }
+    });
+
+    test('non-strings are not safe', () => {
+        assert.equal(isSafeStatus(null), false);
+        assert.equal(isSafeStatus(undefined), false);
+    });
+
+    test('EIL "Partly Safe, Largely Susceptible" → EIL section with the avoidance recommendation', () => {
+        const out = engine.processAssessment(makeEqAssessment({ landslide: 'Partly Safe, Largely Susceptible' }));
+        const eil = out.sections.find(s => s.heading === 'Earthquake-Induced Landslide');
+        assert.ok(eil, 'EIL section expected');
+        assert.match(eil.explanation_recommendation.recommendation, /^Avoidance is recommended/);
+        assert.equal(eil.explanation_recommendation.explanation, '');
+    });
+
+    test('Liquefaction "Largely Safe, Partly Susceptible" → combined mitigation sentence', () => {
+        const out = engine.processAssessment(makeEqAssessment({ liquefaction: 'Largely Safe, Partly Susceptible' }));
+        assert.match(out.common_statements[1].recommendation, /^Ground shaking and liquefaction hazards/);
+    });
+
+    test('tsunami section has the recommendation only', () => {
+        const out = engine.processAssessment(makeEqAssessment({ tsunami: 'Prone; Within the tsunami inundation zone' }));
+        const tsu = out.sections.find(s => s.heading === 'Tsunami');
+        assert.equal(tsu.explanation_recommendation.explanation, '');
+        assert.match(tsu.explanation_recommendation.recommendation, /three natural signs of tsunami/);
+    });
+});
+
+// ─── PAV definition variants ──────────────────────────────────────────────────
+
+describe('Volcano — PAV definition with and without a hazard map', () => {
+    const AV_30KM  = 'Approximately 30 kilometers North of Mayon Volcano';
+    const PAV_10KM = 'Approximately 10 kilometers North of Arayat Volcano';
+    const pavText = out => out.common_statements.map(s => s.explanation).find(t => t.includes('potentially active volcano'));
+
+    test('default (no map) → "yet to be determined" variant', () => {
+        const out = engine.processAssessment(makeVolcanoAssessment(AV_30KM, { nearest_pav: PAV_10KM }));
+        assert.equal(pavText(out),
+            'Arayat Volcano is currently classified by DOST-PHIVOLCS as a potentially active volcano, which is morphologically young-looking but with no historical or analytical records of eruption, therefore, its eruptive and hazard potential is yet to be determined.');
+    });
+
+    test('pav_has_hazard_map → shorter variant', () => {
+        const out = engine.processAssessment(makeVolcanoAssessment(AV_30KM, { nearest_pav: PAV_10KM, pav_has_hazard_map: true }));
+        assert.match(pavText(out), /records of eruption\.$/);
+    });
+});
+
+// ─── Pinatubo and Mayon lahar blocks ──────────────────────────────────────────
+
+describe('Volcano — Pinatubo and Mayon lahar explanations', () => {
+    const PINATUBO = 'Approximately 20 kilometers North of Pinatubo Volcano';
+    const MAYON    = 'Approximately 9 kilometers North of Mayon Volcano';
+    const lahar = out => out.sections.find(s => s.heading === 'Lahar');
+
+    test('Pinatubo "Zone 1" → projection sentence plus the Zone 1 definition', () => {
+        const ex = lahar(engine.processAssessment(makeVolcanoAssessment(PINATUBO, { lahar: 'Zone 1' }))).explanation_recommendation.explanation;
+        assert.match(ex, /^The lahar hazards assessment for Pinatubo Volcano is a long-term lahar hazard projection/);
+        assert.match(ex, /Zone 1 includes areas at high susceptibility/);
+        assert.ok(!ex.includes('Zone 2 includes'));
+    });
+
+    test('Pinatubo "Zones 2 and 3" → both definitions, in order', () => {
+        const ex = lahar(engine.processAssessment(makeVolcanoAssessment(PINATUBO, { lahar: 'Zones 2 and 3' }))).explanation_recommendation.explanation;
+        assert.ok(ex.indexOf('Zone 2 includes') > -1 && ex.indexOf('Zone 2 includes') < ex.indexOf('Zone 3 includes'));
+    });
+
+    test('Pinatubo "Zones 2 to 4" and "Zones 2-4" → zones 2, 3 and 4', () => {
+        for (const status of ['Zones 2 to 4', 'Zones 2-4']) {
+            const ex = lahar(engine.processAssessment(makeVolcanoAssessment(PINATUBO, { lahar: status }))).explanation_recommendation.explanation;
+            for (const z of [2, 3, 4]) assert.ok(ex.includes(`Zone ${z} `), `${status}: Zone ${z}`);
+            assert.ok(!ex.includes('Zone 1 includes') && !ex.includes('Zone 5 are'), status);
+        }
+    });
+
+    test('Pinatubo "Zone 4" → rendered even though zone 4 is "safe from lahars"', () => {
+        const section = lahar(engine.processAssessment(makeVolcanoAssessment(PINATUBO, { lahar: 'Zone 4' })));
+        assert.ok(section);
+        assert.match(section.explanation_recommendation.explanation, /Zone 4 are areas safe from lahars/);
+    });
+
+    test('Mayon "Highly Prone" → Mayon projection plus the highly prone definition', () => {
+        const ex = lahar(engine.processAssessment(makeVolcanoAssessment(MAYON, { lahar: 'Highly Prone' }))).explanation_recommendation.explanation;
+        assert.match(ex, /^The lahar hazards assessment for Mayon Volcano/);
+        assert.match(ex, /Areas highly prone to lahars/);
+        assert.ok(!ex.includes('Areas least prone'));
+    });
+
+    test('Mayon "Safe" → no lahar section', () => {
+        assert.equal(lahar(engine.processAssessment(makeVolcanoAssessment(MAYON, { lahar: 'Safe' }))), undefined);
+    });
+
+    test('other volcano "Prone" → generic lahar explanation', () => {
+        const ex = lahar(engine.processAssessment(makeVolcanoAssessment('Approximately 9 kilometers North of Kanlaon Volcano', { lahar: 'Prone' }))).explanation_recommendation.explanation;
+        assert.match(ex, /^Lahars are rapidly flowing mixtures of volcanic sediment and water/);
     });
 });
 
@@ -415,13 +551,41 @@ describe('Volcano — applies_to for volcanic tsunami and fissure', () => {
         assert.equal(out.warnings.length, 0);
     });
 
-    test('Taal, fissure value → Fissure section rendered', () => {
-        const out = engine.processAssessment(makeVolcanoAssessment(TAAL, { fissure: FISSURE }));
-        assert.ok(headings(out).includes('Fissure'));
+    const at = (assessment, municipality, province) => {
+        assessment.site_location = { barangay: 'Poblacion', municipality, province };
+        return assessment;
+    };
+
+    test('Taal-area municipality → Fissure section with the reporting note, no warning', () => {
+        const out = engine.processAssessment(at(makeVolcanoAssessment(TAAL, { fissure: FISSURE }), 'Talisay', 'Batangas'));
+        const fissure = out.sections.find(s => s.heading === 'Fissure');
+        assert.ok(fissure);
+        assert.deepEqual(fissure.notes, [HAZARD_RULES_SCHEMA.volcano_rules.fissure.special_cases.taal.reporting]);
+        assert.match(fissure.explanation_recommendation.recommendation, /^Fissures may develop further.*Zone of Avoidance\.$/);
         assert.equal(out.warnings.length, 0);
     });
 
-    test('Mayon, fissure value → section left out with a warning', () => {
+    test('"City of Tanauan" and "Tanauan City" both match TANAUAN', () => {
+        for (const m of ['City of Tanauan', 'Tanauan City']) {
+            const out = engine.processAssessment(at(makeVolcanoAssessment(TAAL, { fissure: FISSURE }), m, 'Batangas'));
+            assert.ok(headings(out).includes('Fissure'), m);
+        }
+    });
+
+    test('Talisay outside Batangas → left out with a warning', () => {
+        const out = engine.processAssessment(at(makeVolcanoAssessment(TAAL, { fissure: FISSURE }), 'Talisay City', 'Cebu'));
+        assert.ok(!headings(out).includes('Fissure'));
+        assert.match(out.warnings[0], /only for sites in AGONCILLO.*this site is in Talisay City, Cebu/);
+    });
+
+    test('Taal, unknown municipality → included with a check-before-issuing warning', () => {
+        const out = engine.processAssessment(makeVolcanoAssessment(TAAL, { fissure: FISSURE }));
+        assert.ok(headings(out).includes('Fissure'));
+        assert.equal(out.warnings.length, 1);
+        assert.match(out.warnings[0], /municipality couldn't be read/);
+    });
+
+    test('Mayon, unknown municipality → section left out with a warning', () => {
         const out = engine.processAssessment(makeVolcanoAssessment(MAYON, { fissure: FISSURE }));
         assert.ok(!headings(out).includes('Fissure'));
         assert.equal(out.warnings.length, 1);
@@ -526,5 +690,25 @@ describe('table-row — assessmentFromRow / findCategoryRow', () => {
 
     test('options default to off: Mayon at 30 km gets hazard sections', () => {
         assert.ok(volcanoOut({}).sections.some(s => s.heading === 'Lahar'));
+    });
+
+    test('map options reach the volcano model, with defaults AV map yes, PAV map no', () => {
+        const d = assessmentFromRow(volRow, { category: AssessmentCategory.VOLCANO });
+        assert.equal(d.volcano.av_has_hazard_map, true);
+        assert.equal(d.volcano.pav_has_hazard_map, false);
+        const a = assessmentFromRow(volRow, { category: AssessmentCategory.VOLCANO, avHasHazardMap: false, pavHasHazardMap: true });
+        assert.equal(a.volcano.av_has_hazard_map, false);
+        assert.equal(a.volcano.pav_has_hazard_map, true);
+    });
+
+    test('siteLocation is parsed as "Barangay, City, Province"', () => {
+        const a = assessmentFromRow(volRow, { category: AssessmentCategory.VOLCANO, siteLocation: 'Poblacion, Talisay, Batangas' });
+        assert.deepEqual(a.site_location, { barangay: 'Poblacion', municipality: 'Talisay', province: 'Batangas' });
+    });
+
+    test('parseSiteLocation: fewer than three parts → null', () => {
+        assert.equal(parseSiteLocation('Talisay, Batangas'), null);
+        assert.equal(parseSiteLocation(''), null);
+        assert.equal(parseSiteLocation(undefined), null);
     });
 });

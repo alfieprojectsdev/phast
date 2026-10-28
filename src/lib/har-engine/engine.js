@@ -1,5 +1,5 @@
 // src/lib/har-engine/engine.js
-import { AssessmentCategory, HAROutput, HARSection, ExplanationRecommendation } from './models.js';
+import { AssessmentCategory, HAROutput, HARSection, ExplanationRecommendation, isSafeStatus } from './models.js';
 
 const VOLCANO_TEXT_HINT = 'Expected text like "Approximately 12.3 km northeast of Taal Volcano".';
 
@@ -155,20 +155,29 @@ export class DecisionEngine {
                 if (surge) sections.push(surge);
             }
 
-            // Volcanic Tsunami and Fissure: also gated by applies_to, but a status
-            // the assessor entered is never dropped silently. The list may lag
-            // behind the maps, so the assessor gets a warning to check.
-            const gated = [
-                ['volcanic_tsunami', isPinatubo ? null : this._processVolcanicTsunami(assessment)],
-                ['fissure', this._processVolcanoFissure(assessment, volcanoName, distanceKm)],
-            ];
-            for (const [ruleKey, section] of gated) {
-                if (!section) continue;
-                if (this._appliesTo(ruleKey, volcanoName)) {
-                    sections.push(section);
+            // Volcanic Tsunami: gated by applies_to, but a status the assessor
+            // entered is never dropped silently. The list may lag behind the maps,
+            // so the assessor gets a warning to check.
+            const vTsu = isPinatubo ? null : this._processVolcanicTsunami(assessment);
+            if (vTsu) {
+                if (this._appliesTo('volcanic_tsunami', volcanoName)) {
+                    sections.push(vTsu);
                 } else {
-                    warnings.push(this._notApplicableWarning(ruleKey, section, volcanoName));
+                    warnings.push(this._notApplicableWarning('volcanic_tsunami', vTsu, volcanoName));
                 }
+            }
+
+            // Fissure: the template applies it to sites in the Taal-area municipalities,
+            // and its reporting note always goes with it (HAR Templates docx p12-13).
+            const fissure = this._processVolcanoFissure(assessment, volcanoName, distanceKm);
+            if (fissure) {
+                const gate = this._taalFissureGate(assessment.site_location, volcanoName, fissure);
+                if (gate.include) {
+                    const note = this.schema.volcano_rules.fissure.special_cases?.taal?.reporting;
+                    if (note) fissure.notes.push(note);
+                    sections.push(fissure);
+                }
+                if (gate.warning) warnings.push(gate.warning);
             }
         }
 
@@ -185,14 +194,15 @@ export class DecisionEngine {
             // Rule: if PAV is nearer than AV (both < 50 km) → assess both + flag VOOD.
             // Rule: if AV is nearer (both < 50 km) → AV only, skip PAV.
             // Rule: if both > 50 km → AV only (already handled by isDistant above).
+            const pavStatement = this._getPavStatement(pavInfo.name, assessment.volcano.pav_has_hazard_map);
             if (bothWithin50 && pavIsNearer) {
-                common.push(this._getPavStatement(assessment.volcano.nearest_pav));
+                common.push(pavStatement);
                 common.push(ExplanationRecommendation.fromParts({
                     recommendation: "The Potentially Active Volcano is nearer to the site than the Active Volcano. Please consult the Volcano Officer of the Day (VOOD) for further guidance before issuing this assessment."
                 }));
             } else if (!bothWithin50 && pavDistanceKm < 50.0) {
                 // Edge case: PAV < 50 km but AV > 50 km — include PAV assessment.
-                common.push(this._getPavStatement(assessment.volcano.nearest_pav));
+                common.push(pavStatement);
             }
             // else: AV is nearer or both > 50 km — PAV not assessed.
         }
@@ -235,6 +245,40 @@ export class DecisionEngine {
             `If ${volcanoName} Volcano has a ${section.heading.toLowerCase()} map, add it to ${ruleKey}.applies_to.`;
     }
 
+    // Decides whether a volcanic fissure section is used. Matching is on
+    // province + municipality, because TALISAY and SAN NICOLAS also exist
+    // outside Batangas. With no readable location, fall back to the nearest
+    // volcano being Taal and say so.
+    _taalFissureGate(siteLocation, volcanoName, section) {
+        const taal = this.schema.volcano_rules.fissure.special_cases?.taal || {};
+        const list = (taal.municipalities || []).join(', ');
+        const where = `${list} (${taal.province || 'BATANGAS'})`;
+        const norm = s => (s || '').toUpperCase()
+            .replace(/\bCITY OF\b|\bMUNICIPALITY OF\b|\bCITY\b/g, '')
+            .replace(/\s+/g, ' ').trim();
+        const municipality = norm(siteLocation?.municipality);
+        const province = norm(siteLocation?.province);
+
+        if (municipality && province) {
+            if (province === norm(taal.province) && (taal.municipalities || []).includes(municipality)) {
+                return { include: true };
+            }
+            return {
+                include: false,
+                warning: `Left out ${section.heading} ("${section.assessment}"): the template uses it only for sites in ${where}, ` +
+                    `and this site is in ${siteLocation.municipality}, ${siteLocation.province}.`,
+            };
+        }
+        if (this._appliesTo('fissure', volcanoName)) {
+            return {
+                include: true,
+                warning: `Included ${section.heading} because the nearest volcano is Taal, but the site's municipality couldn't be read. ` +
+                    `The template uses it only for sites in ${where}; check before issuing.`,
+            };
+        }
+        return { include: false, warning: this._notApplicableWarning('fissure', section, volcanoName) };
+    }
+
     _getIntroStatement(assessment) {
         const categoryRules = assessment.category === AssessmentCategory.EARTHQUAKE
             ? this.schema.earthquake_rules
@@ -256,9 +300,7 @@ export class DecisionEngine {
 
         const showIfSafe = rule.policy?.show_explanation_if_safe ?? true;
 
-        const isSafe = typeof status === 'string' && status.toLowerCase().includes("safe");
-
-        if (isSafe && !showIfSafe) {
+        if (isSafeStatus(status) && !showIfSafe) {
             return false;
         }
         return true;
@@ -394,9 +436,10 @@ export class DecisionEngine {
             }
 
             if (radiusKm === null) {
-                // Generic fallback: no specific PDZ radius configured but site is close.
+                // No PDZ radius configured. The template's "delineated 10-kilometer radius"
+                // sentence is only for a volcano with no hazard map (docx p12, line 3*).
                 const fallback = rule.conditions.no_pdz_within_10km;
-                if (fallback && distanceKm < 10) {
+                if (fallback && distanceKm < 10 && assessment.volcano.av_has_hazard_map === false) {
                     return [ExplanationRecommendation.fromParts({ explanation: fallback })];
                 }
                 return [];
@@ -429,15 +472,19 @@ export class DecisionEngine {
     _processLahar(assessment, volcanoName) {
         try {
             const status = assessment.volcano.lahar;
-            if (!this._shouldRenderSection('lahar', status, this.schema.volcano_rules)) {
-                return null;
-            }
-
             const rule = this.schema.volcano_rules['lahar'];
             if (!rule) return null;
 
+            // Pinatubo zones and Mayon categories get their own explanation instead of
+            // the generic one. Zones 4-5 read "safe from lahars but susceptible ...",
+            // so a named zone always renders.
+            const special = this._laharSpecialExplanation(volcanoName, status);
+            if (!special && !this._shouldRenderSection('lahar', status, this.schema.volcano_rules)) {
+                return null;
+            }
+
             const expRec = ExplanationRecommendation.fromParts({
-                explanation: rule.explanation,
+                explanation: special || rule.explanation,
                 recommendation: rule.recommendation
             });
 
@@ -449,6 +496,38 @@ export class DecisionEngine {
         } catch (e) {
             return null;
         }
+    }
+
+    // Projection sentence plus the definitions for the zones (Pinatubo) or
+    // categories (Mayon) named in the status, as in HAR Templates docx p13-14.
+    // Null when the volcano has no special block or the status names none.
+    _laharSpecialExplanation(volcanoName, status) {
+        if (typeof status !== 'string') return null;
+        const cases = this.schema.volcano_rules.lahar?.special_cases || {};
+        const name = volcanoName.toLowerCase();
+        const s = status.toLowerCase();
+        let definitions = [];
+        let block = null;
+
+        if (name.includes('pinatubo') && cases.pinatubo) {
+            block = cases.pinatubo;
+            // "Zone 1", "Zones 2 and 3", "Zones 2 to 4" / "Zones 2-4" (a range).
+            const zones = new Set();
+            for (const m of s.matchAll(/zones?\s*([1-5](?:\s*(?:,|and|&|to|-)\s*[1-5])*)/g)) {
+                for (const r of m[1].matchAll(/([1-5])(?:\s*(?:to|-)\s*([1-5]))?/g)) {
+                    const a = Number(r[1]), b = Number(r[2] || r[1]);
+                    for (let z = Math.min(a, b); z <= Math.max(a, b); z++) zones.add(String(z));
+                }
+            }
+            definitions = [...zones].sort().map(z => block.zones[z]).filter(Boolean);
+        } else if (name.includes('mayon') && cases.mayon) {
+            block = cases.mayon;
+            definitions = Object.entries(block.categories)
+                .filter(([category]) => s.includes(category))
+                .map(([, text]) => text);
+        }
+        if (!block || definitions.length === 0) return null;
+        return [block.projection, ...definitions].join(' ');
     }
 
     _processPyroclasticFlow(assessment) {
@@ -568,9 +647,10 @@ export class DecisionEngine {
             if (!status || status === "--") return null;
 
             const rule = this.schema.volcano_rules['fissure'];
+            // Statement 4/5b in the template is the development sentence followed by the buffer.
             const expRec = ExplanationRecommendation.fromParts({
                 explanation: rule.explanation,
-                recommendation: rule.recommendation
+                recommendation: [rule.development, rule.recommendation].filter(Boolean).join(' ')
             });
             return new HARSection(
                 "Fissure",
@@ -582,16 +662,10 @@ export class DecisionEngine {
         }
     }
 
-    _getPavStatement(pavText) {
-        let volcanoName = "Unknown";
-        if (pavText.includes("of ") && pavText.includes("Volcano")) {
-            const parts = pavText.split("of ")[1];
-            volcanoName = parts.split(" Volcano")[0].trim();
-        }
-
-        const explanation = `${volcanoName} Volcano is currently classified by DOST-PHIVOLCS as a potentially active volcano, which is morphologically young-looking but with no historical or analytical records of eruption.`;
-
-        return ExplanationRecommendation.fromParts({ explanation: explanation });
+    _getPavStatement(pavName, hasHazardMap) {
+        const pav = this.schema.volcano_rules.pav;
+        const template = hasHazardMap ? pav.with_hazard_map : pav.no_hazard_map;
+        return ExplanationRecommendation.fromParts({ explanation: template.replace('{pav_name}', pavName) });
     }
 
     _getAshfallStatement(volcanoName) {
@@ -620,8 +694,9 @@ export class DecisionEngine {
 
     _isLiqSusceptible(liqStatus) {
         if (!liqStatus || liqStatus === "--") return false;
+        // "Largely Safe, Partly Susceptible" is susceptible: only a plain "Safe" isn't.
+        if (isSafeStatus(liqStatus)) return false;
         const s = liqStatus.toLowerCase();
-        if (s.includes("safe")) return false;
         // GMMA-READY: "Low Potential" is treated as non-susceptible for mitigation text.
         if (s.includes("low potential")) return false;
         return true;

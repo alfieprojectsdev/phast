@@ -44,15 +44,34 @@ export function findCategoryRow(rows, category) {
 }
 
 /**
+ * The request page's "Province, City, Barangay" field. Despite the label the value
+ * reads "Barangay, City, Province" (see filename-generator.js).
+ * @param {string} text
+ * @returns {{barangay: string, municipality: string, province: string}|null}
+ */
+export function parseSiteLocation(text) {
+    const parts = (text || '').split(',').map(s => s.trim()).filter(Boolean);
+    if (parts.length < 3) return null;
+    const [barangay, municipality, province] = parts.slice(-3);
+    return { barangay, municipality, province };
+}
+
+/**
  * @param {string[]} parts  Cell texts of one table row
  * @param {object} options
  * @param {string} options.category              AssessmentCategory value
  * @param {boolean} [options.vicinityMapProvided]
  * @param {boolean} [options.outsideWatershed]    Volcano only
  * @param {boolean} [options.isIslandVolcano]     Volcano only
+ * @param {boolean} [options.avHasHazardMap]      Volcano only; default true
+ * @param {boolean} [options.pavHasHazardMap]     Volcano only; default false
+ * @param {string}  [options.siteLocation]        The request's location text
  * @returns {Assessment}
  */
-export function assessmentFromRow(parts, { category, vicinityMapProvided = false, outsideWatershed = false, isIslandVolcano = false }) {
+export function assessmentFromRow(parts, {
+    category, vicinityMapProvided = false, outsideWatershed = false, isIslandVolcano = false,
+    avHasHazardMap = true, pavHasHazardMap = false, siteLocation = '',
+}) {
     const pick = fields => Object.fromEntries(fields.map(f => [f, cell(parts, f)]));
     const isEarthquake = category === AssessmentCategory.EARTHQUAKE;
 
@@ -62,11 +81,14 @@ export function assessmentFromRow(parts, { category, vicinityMapProvided = false
         feature_type: FeatureType.POINT,
         location: Coordinate.fromString(parts[COLUMNS.coordinates] ? parts[COLUMNS.coordinates].trim() : "0,0"),
         vicinity_map_provided: vicinityMapProvided,
+        site_location: parseSiteLocation(siteLocation),
         earthquake: isEarthquake ? pick(EARTHQUAKE_FIELDS) : null,
         volcano: isEarthquake ? null : {
             ...pick(VOLCANO_FIELDS),
             outside_watershed: outsideWatershed,
             is_island_volcano: isIslandVolcano,
+            av_has_hazard_map: avHasHazardMap,
+            pav_has_hazard_map: pavHasHazardMap,
         },
     });
 }

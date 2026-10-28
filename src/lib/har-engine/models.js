@@ -32,6 +32,15 @@ export class Coordinate {
     }
 }
 
+// A status is safe only when it says "safe" and nothing else. The templates use
+// compound statuses such as "Partly Safe, Largely Susceptible" or "Zone 4 ... safe
+// from lahars but susceptible ..." (OHAS 2025 slides 52-53), which describe a hazard.
+export function isSafeStatus(status) {
+    if (typeof status !== 'string') return false;
+    const s = status.toLowerCase();
+    return s.includes("safe") && !/susceptib|prone/.test(s);
+}
+
 export class EarthquakeAssessment {
     constructor({ active_fault, liquefaction, landslide, tsunami, fissure, fissure_distance_m } = {}) {
         this.active_fault = active_fault || null;
@@ -51,13 +60,12 @@ export class EarthquakeAssessment {
 
     isSafe(hazard) {
         if (!this.isAssessed(hazard)) return true;
-        const value = this[hazard];
-        return typeof value === 'string' && value.toLowerCase().includes("safe");
+        return isSafeStatus(this[hazard]);
     }
 }
 
 export class VolcanoAssessment {
-    constructor({ nearest_active_volcano, nearest_pav, fissure, lahar, pyroclastic_flow, base_surge, lava_flow, ballistic_projectile, volcanic_tsunami, outside_watershed, is_island_volcano } = {}) {
+    constructor({ nearest_active_volcano, nearest_pav, fissure, lahar, pyroclastic_flow, base_surge, lava_flow, ballistic_projectile, volcanic_tsunami, outside_watershed, is_island_volcano, av_has_hazard_map, pav_has_hazard_map } = {}) {
         this.nearest_active_volcano = nearest_active_volcano || null;
         this.nearest_pav = nearest_pav || null;
         this.fissure = fissure || null;
@@ -73,6 +81,10 @@ export class VolcanoAssessment {
         // True for volcanoes whose hazard footprint is primarily the island itself
         // (e.g. Biliran, Hibok-Hibok). Selects the island-specific distant text.
         this.is_island_volcano = is_island_volcano ?? false;
+        // The HAR templates word some statements differently when a volcano has no
+        // hazard map (HAR Templates docx p12, p17). Most AVs have maps; most PAVs don't.
+        this.av_has_hazard_map = av_has_hazard_map ?? true;
+        this.pav_has_hazard_map = pav_has_hazard_map ?? false;
     }
 
     isAssessed(hazard) {
@@ -82,17 +94,18 @@ export class VolcanoAssessment {
 
     isSafe(hazard) {
         if (!this.isAssessed(hazard)) return true;
-        const value = this[hazard];
-        return typeof value === 'string' && value.toLowerCase().includes("safe");
+        return isSafeStatus(this[hazard]);
     }
 }
 
 export class Assessment {
-    constructor({ id, category, feature_type, location, earthquake, volcano, vicinity_map_provided = false } = {}) {
+    constructor({ id, category, feature_type, location, earthquake, volcano, vicinity_map_provided = false, site_location = null } = {}) {
         this.id = id;
         this.category = category;
         this.feature_type = feature_type;
         this.location = location; // Coordinate object or similar
+        // { barangay, municipality, province } from the request page, or null if unknown.
+        this.site_location = site_location;
         this.earthquake = earthquake ? new EarthquakeAssessment(earthquake) : null;
         this.volcano = volcano ? new VolcanoAssessment(volcano) : null;
         this.vicinity_map_provided = vicinity_map_provided;
@@ -113,6 +126,8 @@ export class HARSection {
         this.assessment = assessment;
         this.explanation_recommendation = explanationRecommendation;
         this.order = order;
+        // Extra statements the template prints after the section, e.g. the Taal fissure reporting note.
+        this.notes = [];
     }
 }
 

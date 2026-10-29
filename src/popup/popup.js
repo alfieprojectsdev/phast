@@ -6,6 +6,7 @@ import { DecisionEngine } from '../lib/har-engine/engine.js';
 import { HAZARD_RULES_SCHEMA } from '../lib/har-engine/rules.js';
 import { AssessmentCategory } from '../lib/har-engine/models.js';
 import { assessmentFromRow, findCategoryRow, COLUMNS } from '../lib/har-engine/table-row.js';
+import { eilVizUrl } from '../lib/eil-handoff.js';
 
 let _currentMetadata = null;
 let _currentFilenames = [];
@@ -362,8 +363,8 @@ async function sendToEILViz() {
 
     if (health.ready) {
         _setEILStatus(statusEl, '', '');
-        const encoded = btoa(unescape(encodeURIComponent(geoJson)));
-        window.open(`${base}/?geo=${encoded}`, '_blank');
+        // Always a new tab: EIL-Viz reads the parcel only when the page loads.
+        window.open(eilVizUrl(base, geoJson), '_blank');
         return;
     }
 

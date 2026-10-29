@@ -32,7 +32,7 @@ These buttons call functions that PHAST injects into the page's own JavaScript c
 - Check Feature in ULAP opens the ULAP portal in a new tab, centred on the coordinates in the first row of the assessment table.
 - Copy Coords / KMZ Link centres the map on the first DMS coordinates in a Remarks cell, or if there are none, imports the request's KML/KMZ. Despite the label it doesn't copy anything.
 
-"Send to EIL-Viz" takes the drawn or imported parcel polygon, checks that the EIL server is ready, and opens EIL-Viz with the polygon base64-encoded in a `?geo=` parameter. See [EIL server](#eil-server).
+"Send to EIL-Viz" takes the drawn or imported parcel polygon, checks that the EIL server is ready, and opens EIL-Viz in a new tab with the polygon base64-encoded after `#geo=`. Browsers don't send that part of a link to the server, so the parcel stays out of server and proxy logs. It still appears in your browser history. See [EIL server](#eil-server).
 
 ### Report tab
 
@@ -149,6 +149,7 @@ There's no build step and no `package.json`. Load the folder unpacked, edit, and
 | `src/inject/leaflet-loader.js` | Page, isolated world | Injects `map-handlers.js` into the page's own context |
 | `src/inject/map-handlers.js` | Page, main world | `window.PHAST.*`: overlay, KML import, ULAP, coordinates, GeoJSON export |
 | `src/lib/filename-generator.js` | Popup | Filename rules |
+| `src/lib/eil-handoff.js` | Popup | The link "Send to EIL-Viz" opens |
 | `src/lib/har-engine/` | Popup | `rules.js` (text and thresholds), `models.js`, `engine.js` (decision logic), `table-row.js` (assessment table row to `Assessment`) |
 | `src/background/service-worker.js` | Background | Install log and a `PING` responder; nothing else |
 | `src/vendor/` | Loaded by `map-handlers.js` | Leaflet.DistortableImage, PDF.js, JSZip. See [src/vendor/README.md](src/vendor/README.md) |
@@ -159,7 +160,7 @@ There's no build step and no `package.json`. Load the folder unpacked, edit, and
 node --test
 ```
 
-101 tests in `tests/*.test.mjs`: the HAR engine, the table-row mapping in `table-row.js`, the shape of `rules.js`, and the overlay crop helpers in `map-handlers.js` (`window.PHAST.crop`). The crop tests load `map-handlers.js` in a Node vm and read the operator codes from the vendored PDF.js. Nothing tests the popup, the scraper or the map handlers' DOM and Leaflet code. Tested on Node 24.19.
+105 tests in `tests/*.test.mjs`: the HAR engine, the table-row mapping in `table-row.js`, the shape of `rules.js`, the EIL-Viz handoff link in `eil-handoff.js`, and the overlay crop helpers in `map-handlers.js` (`window.PHAST.crop`). The crop tests load `map-handlers.js` in a Node vm and read the operator codes from the vendored PDF.js. Nothing tests the popup, the scraper or the map handlers' DOM and Leaflet code. Tested on Node 24.19.
 
 `tests/mock-page.html` is a stand-in HAS Admin page with a Leaflet map and three attachments, for trying the map tools: a synthetic vicinity map (`tests/fixtures/vicinity-map.png`), the same map pasted into a Word-style A4 page with margins and a caption (`tests/fixtures/vicinity-map-word.pdf`), and a KML. The fixtures are generated, not real places. Fetching attachments doesn't work from `file://`, so serve the repository root over HTTP (for example `python -m http.server 8765`) and open `http://localhost:8765/tests/mock-page.html`. With the extension installed, its content scripts run there only if the address is added to the manifest; without it, the page's "Load map handlers" button loads `src/inject/map-handlers.js` directly. The page loads Leaflet from unpkg, so it needs internet access. Its table doesn't have the column layout the Report tab reads.
 

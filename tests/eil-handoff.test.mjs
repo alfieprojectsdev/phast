@@ -2,8 +2,8 @@
  * EIL-Viz handoff link (src/lib/eil-handoff.js).
  * Run: node --test tests/eil-handoff.test.mjs
  *
- * Each case decodes the link the way EIL-Viz does: URLSearchParams over the
- * fragment, then atob and TextDecoder.
+ * The round-trip cases decode the link the way EIL-Viz does: URLSearchParams
+ * over the fragment, then atob and TextDecoder.
  */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';

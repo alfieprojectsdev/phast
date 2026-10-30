@@ -79,8 +79,9 @@ export const HAZARD_RULES_SCHEMA = {
             },
             "trigger": "only_if_within_1km_of_mapped_fissure",
             "special_cases": {
+                // The templates give no reporting note for Muntinlupa; the only
+                // one (volcano_rules.fissure.special_cases.taal) names Taal Volcano.
                 "muntinlupa": {
-                    "reporting": "Stakeholders are advised to report to the Institute fissures that may be observed in Muntinlupa that need to be reflected in the fissure map.",
                     "municipalities": ["MUNTINLUPA"]
                 }
             }

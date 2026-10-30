@@ -24,6 +24,7 @@ export class DecisionEngine {
         }
 
         let sections = [];
+        const warnings = [];
 
         // 1. Intro statement
         const intro = this._getIntroStatement(assessment);
@@ -34,10 +35,15 @@ export class DecisionEngine {
             if (section) sections.push(section);
         }
 
-        // 3. Fissure (if applicable)
+        // 3. Fissure: assessed for Muntinlupa sites under 1 km from a mapped
+        // fissure (OHAS 2025 slides 32 and 55).
         if (assessment.earthquake.isAssessed('fissure')) {
             const fissureSection = this._processEarthquakeFissure(assessment);
-            if (fissureSection) sections.push(fissureSection);
+            if (fissureSection) {
+                const gate = this._muntinlupaFissureGate(assessment.site_location, fissureSection);
+                if (gate.include) sections.push(fissureSection);
+                if (gate.warning) warnings.push(gate.warning);
+            }
         }
 
         // 4. EIL
@@ -76,7 +82,8 @@ export class DecisionEngine {
             common_statements: common,
             supersedes: supersedes,
             additional_recommendations: [],
-            boilerplate: this.schema.common_boilerplate || {}
+            boilerplate: this.schema.common_boilerplate || {},
+            warnings: warnings
         });
     }
 
@@ -253,9 +260,7 @@ export class DecisionEngine {
         const taal = this.schema.volcano_rules.fissure.special_cases?.taal || {};
         const list = (taal.municipalities || []).join(', ');
         const where = `${list} (${taal.province || 'BATANGAS'})`;
-        const norm = s => (s || '').toUpperCase()
-            .replace(/\bCITY OF\b|\bMUNICIPALITY OF\b|\bCITY\b/g, '')
-            .replace(/\s+/g, ' ').trim();
+        const norm = s => this._normPlace(s);
         const municipality = norm(siteLocation?.municipality);
         const province = norm(siteLocation?.province);
 
@@ -277,6 +282,46 @@ export class DecisionEngine {
             };
         }
         return { include: false, warning: this._notApplicableWarning('fissure', section, volcanoName) };
+    }
+
+    // "City of Muntinlupa", "Muntinlupa City" and "MUNTINLUPA" all compare equal.
+    _normPlace(s) {
+        return (s || '').toUpperCase()
+            .replace(/\bCITY OF\b|\bMUNICIPALITY OF\b|\bCITY\b/g, '')
+            .replace(/\s+/g, ' ').trim();
+    }
+
+    // Decides whether an earthquake fissure section is used. The earthquake
+    // assessment measures fissures only for Muntinlupa (OHAS 2025 slide 32);
+    // Taal-area fissures go in the volcano assessment. Matching is on the
+    // municipality alone: Muntinlupa's province reads differently from request
+    // to request (Metro Manila, NCR), and no other municipality has that name.
+    // No reporting note: the templates give one only for Taal.
+    _muntinlupaFissureGate(siteLocation, section) {
+        const muntinlupa = this.schema.earthquake_rules.fissure.special_cases?.muntinlupa || {};
+        const towns = muntinlupa.municipalities || ['MUNTINLUPA'];
+        const municipality = this._normPlace(siteLocation?.municipality);
+
+        if (!municipality) {
+            return {
+                include: true,
+                warning: `Included ${section.heading} although the site's municipality couldn't be read. ` +
+                    `The earthquake assessment uses it only for sites in ${towns.join(', ')}; check before issuing.`,
+            };
+        }
+        if (towns.includes(municipality)) {
+            return { include: true };
+        }
+
+        const taal = this.schema.volcano_rules.fissure.special_cases?.taal || {};
+        const inTaalArea = this._normPlace(siteLocation.province) === this._normPlace(taal.province) &&
+            (taal.municipalities || []).includes(municipality);
+        return {
+            include: false,
+            warning: `Left out ${section.heading} ("${section.assessment}"): the earthquake assessment uses it only for sites in ${towns.join(', ')}, ` +
+                `and this site is in ${siteLocation.municipality}, ${siteLocation.province}.` +
+                (inTaalArea ? ' Fissures in the Taal area go in the Volcano report.' : ''),
+        };
     }
 
     _getIntroStatement(assessment) {

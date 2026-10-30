@@ -146,7 +146,9 @@ These are the AV-only template's wording. The template for hazards assessed from
 
 ### 1b. FISSURES — MUNTINLUPA
 * Fissure assessment is **required** for Muntinlupa sites that are **less than 1 kilometer** from the nearest mapped fissure.
-* Use the same Safe/Prone language and mandatory note as Taal fissures above.
+* Use the same Safe/Prone language as Taal fissures above (OHAS 2025 slide 55).
+* No mandatory note: the templates give one only for Taal, and it names Taal Volcano.
+* Fissures go in the Earthquake report for Muntinlupa and in the Volcano report for the Taal area (OHAS 2025 slide 32).
 
 ### 2. PINATUBO (lahar hazard only)
 * **Lahar Zones:** Do not use Prone/Safe. Use **Zones (1-5)**.

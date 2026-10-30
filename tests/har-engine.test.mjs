@@ -144,6 +144,58 @@ describe('Fissure — 1 km trigger enforcement', () => {
     });
 });
 
+// ─── Earthquake: Fissure is a Muntinlupa template ────────────────────────────
+
+describe('Fissure — Muntinlupa gate', () => {
+    const FISSURE = 'Safe; Approximately 300 meters North of a mapped fissure';
+    const at = (municipality, province) => {
+        const assessment = makeEqAssessment({ fissure: FISSURE });
+        assessment.site_location = municipality === null ? null : { barangay: 'Poblacion', municipality, province };
+        return engine.processAssessment(assessment);
+    };
+    const section = out => out.sections.find(s => s.heading === 'Fissure (Earthquake-Related)');
+
+    test('Muntinlupa site → section with no note (the templates give none) and no warning', () => {
+        const out = at('Muntinlupa City', 'Metro Manila');
+        assert.ok(section(out));
+        assert.deepEqual(section(out).notes, []);
+        assert.deepEqual(out.warnings, []);
+    });
+
+    test('"City of Muntinlupa" and an NCR province match too', () => {
+        const out = at('City of Muntinlupa', 'NCR, Fourth District');
+        assert.ok(section(out));
+        assert.deepEqual(out.warnings, []);
+    });
+
+    test('site outside Muntinlupa → left out with a warning naming the site', () => {
+        const out = at('Pasig City', 'Metro Manila');
+        assert.equal(section(out), undefined);
+        assert.equal(out.warnings.length, 1);
+        assert.match(out.warnings[0], /only for sites in MUNTINLUPA, and this site is in Pasig City, Metro Manila\.$/);
+    });
+
+    test('Taal-area site → left out, pointing to the Volcano report', () => {
+        const out = at('Talisay', 'Batangas');
+        assert.equal(section(out), undefined);
+        assert.match(out.warnings[0], /Fissures in the Taal area go in the Volcano report\.$/);
+    });
+
+    test('unreadable location → kept, with a warning to check', () => {
+        const out = at(null);
+        assert.ok(section(out));
+        assert.match(out.warnings[0], /^Included Fissure \(Earthquake-Related\) although the site's municipality couldn't be read/);
+    });
+
+    test('beyond 1 km → no section and no warning, wherever the site is', () => {
+        const assessment = makeEqAssessment({ fissure: FISSURE, fissure_distance_m: 1500 });
+        assessment.site_location = { barangay: 'Poblacion', municipality: 'Pasig City', province: 'Metro Manila' };
+        const out = engine.processAssessment(assessment);
+        assert.equal(section(out), undefined);
+        assert.deepEqual(out.warnings, []);
+    });
+});
+
 // ─── Volcano: 50 km gatekeeper ────────────────────────────────────────────────
 
 describe('Volcano — 50 km gatekeeper', () => {

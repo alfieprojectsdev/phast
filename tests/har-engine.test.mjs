@@ -162,8 +162,17 @@ describe('Fissure — Muntinlupa gate', () => {
         assert.deepEqual(out.warnings, []);
     });
 
-    test('"City of Muntinlupa" and an NCR province match too', () => {
-        const out = at('City of Muntinlupa', 'NCR, Fourth District');
+    test('"City of Muntinlupa" matches too', () => {
+        const out = at('City of Muntinlupa', 'Metro Manila');
+        assert.ok(section(out));
+        assert.deepEqual(out.warnings, []);
+    });
+
+    test('an NCR district part in the location field still matches', () => {
+        // parseSiteLocation keeps the last three parts, so the city lands in the barangay slot.
+        const assessment = makeEqAssessment({ fissure: FISSURE });
+        assessment.site_location = parseSiteLocation('Poblacion, Muntinlupa City, NCR, Fourth District');
+        const out = engine.processAssessment(assessment);
         assert.ok(section(out));
         assert.deepEqual(out.warnings, []);
     });

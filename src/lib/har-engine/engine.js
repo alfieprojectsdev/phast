@@ -294,8 +294,10 @@ export class DecisionEngine {
     // Decides whether an earthquake fissure section is used. The earthquake
     // assessment measures fissures only for Muntinlupa (OHAS 2025 slide 32);
     // Taal-area fissures go in the volcano assessment. Matching is on the
-    // municipality alone: Muntinlupa's province reads differently from request
-    // to request (Metro Manila, NCR), and no other municipality has that name.
+    // name alone, in any of the parsed fields: no other place is called
+    // Muntinlupa, and NCR locations can carry an extra district part
+    // ("..., Muntinlupa City, NCR, Fourth District") that shifts the city out
+    // of the municipality slot when parseSiteLocation keeps the last three.
     // No reporting note: the templates give one only for Taal.
     _muntinlupaFissureGate(siteLocation, section) {
         const muntinlupa = this.schema.earthquake_rules.fissure.special_cases?.muntinlupa || {};
@@ -309,7 +311,8 @@ export class DecisionEngine {
                     `The earthquake assessment uses it only for sites in ${towns.join(', ')}; check before issuing.`,
             };
         }
-        if (towns.includes(municipality)) {
+        const parts = [siteLocation.barangay, siteLocation.municipality, siteLocation.province].map(p => this._normPlace(p));
+        if (parts.some(p => towns.includes(p))) {
             return { include: true };
         }
 

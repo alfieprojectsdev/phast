@@ -105,11 +105,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // service-worker.js clears the action popup where the side panel is used,
-    // so a popup set here means this page is the popup.
-    chrome.action.getPopup({}, (popup) => {
-        if (popup) document.body.classList.add('as-popup');
-    });
+    // Pin the width only when this page really is the toolbar popup, not a
+    // side panel (which Chrome's own side panel menu can open too).
+    if (chrome.extension.getViews({ type: 'popup' }).includes(window)) {
+        document.body.classList.add('as-popup');
+    }
 
     // Initial Data Fetch
     fetchMetadata();
@@ -144,9 +144,12 @@ document.addEventListener('DOMContentLoaded', () => {
     reportCategory.addEventListener('change', syncVolcanoOptions);
     syncVolcanoOptions();
 
-    // Settings live on the options page; the suffix changes the filenames shown here.
+    // Settings live on the options page. The suffix only changes the filenames,
+    // so rebuild those and leave the rest (a generated report, say) alone.
     chrome.storage.onChanged.addListener((changes, area) => {
-        if (area === 'local' && changes.hamSuffix) rescan();
+        if (area === 'local' && changes.hamSuffix && _currentMetadata && _shownTabId !== null) {
+            fetchHazardsForFilenames(_currentMetadata, changes.hamSuffix.newValue || 'ArP', _shownTabId, _scanSeq);
+        }
     });
 
     // Copy Report Listener

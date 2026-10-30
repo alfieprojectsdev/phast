@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PHAST settings</title>
+    <link rel="stylesheet" href="../popup/styles.css">
+</head>
+<body class="options">
+    <div class="card">
+        <h3>Settings</h3>
+        <div class="field-group">
+            <label for="setting-suffix">Filename suffix</label>
+            <input type="text" id="setting-suffix" placeholder="ArP">
+        </div>
+        <div class="field-group">
+            <label for="setting-eil-base">EIL server URL</label>
+            <input type="text" id="setting-eil-base" placeholder="auto-detect (leave blank)">
+            <small class="field-hint">Where eil-viz and the assessment API are
+            served. Change only if the deployment moves.</small>
+        </div>
+        <small class="field-hint">Changes are saved as you type.</small>
+    </div>
+    <script src="options.js" type="module"></script>
+</body>
+</html>

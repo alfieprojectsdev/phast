@@ -9,11 +9,13 @@ PHAST is a Chrome extension (Manifest V3) for assessors working in PHIVOLCS HAS 
 
 ## What it does
 
+Clicking PHAST's toolbar icon opens it in Chrome's side panel, which stays open while you work on the page and survives clicks elsewhere. It follows the tab you're on: switch to another request, or let the page reload, and it clears what it showed and scans the new page, so filenames and report text always belong to the request in front of you. The header shows which request that is. Chrome before 116, and any browser without the side panel API, gets the same page as a popup instead.
+
 ### Dashboard tab
 
-When a HAS Admin page loads, the content script reads Request, Requested For, Requested By, "Province, City, Barangay" and Hazard Type from the page and caches them for the popup. "Rescan Page" reads them again.
+PHAST reads Request, Requested For, Requested By, "Province, City, Barangay" and Hazard Type from the page when it opens and whenever the tab changes. "Rescan Page" reads them again.
 
-From those fields the popup builds one filename per hazard map (see [Hazards](#hazards) for the codes):
+From those fields PHAST builds one filename per hazard map (see [Hazards](#hazards) for the codes):
 
 ```
 {Request}_{code}_{Province}-{City}-Brgy{Barangay}_{Client}-{Requester}_{suffix}
@@ -21,7 +23,7 @@ From those fields the popup builds one filename per hazard map (see [Hazards](#h
 
 The client name is shortened (Corporation to Corp, Department to Dept, and 19 others) and run together in PascalCase. The requester becomes initials plus surname. "Copy All" puts the request ID, hazard types, filenames, client and requester on the clipboard as JSON.
 
-The popup also looks for request coordinates. It takes the first pair of DMS coordinates it finds in a Remarks cell (the third column of any table on the page); failing that, the first KML or KMZ attachment. Coordinates get "Center Map" and "Copy" buttons, an attachment gets "Import to Map".
+PHAST also looks for request coordinates. It takes the first pair of DMS coordinates it finds in a Remarks cell (the third column of any table on the page); failing that, the first KML or KMZ attachment. Coordinates get "Center Map" and "Copy" buttons, an attachment gets "Import to Map".
 
 ### Map Tools tab
 
@@ -55,7 +57,7 @@ On any HAS Admin table with the `items` class, clicking a row toggles that row's
 3. Open `chrome://extensions/` in Chrome.
 4. Turn on Developer mode (top right). Chrome only installs extensions from outside the Chrome Web Store this way.
 5. Click "Load unpacked" and select the folder that contains `manifest.json`. If extracting created a folder inside your folder, pick the inner one.
-6. Optionally, pin PHAST from the puzzle-piece menu next to the address bar so its icon stays visible.
+6. Optionally, pin PHAST from the puzzle-piece menu next to the address bar so its icon stays visible. Click the icon to open PHAST in the side panel.
 
 To update, download the new `phast.zip`, delete everything inside your PHAST folder, extract the new zip into the same folder, then click the reload arrow on PHAST's card in `chrome://extensions/`. Emptying the folder first stops files from an older release lingering. Your settings carry over.
 
@@ -101,12 +103,12 @@ Ballistic projectiles and volcanic tsunami are recognised by the table-text sear
 
 ## Configuration
 
-Settings are stored in `chrome.storage.local` and persist across sessions.
+Settings open from the Settings button in PHAST's header, or from "Options" when you right-click the toolbar icon. They're stored in `chrome.storage.local`, persist across sessions, and take effect as you type.
 
 - Filename Suffix is appended to every filename. Default `ArP`.
 - EIL server URL is blank by default, which means auto-detect. See below.
 
-The manifest asks for `activeTab`, `scripting` (to run the map tools in the page), `storage`, `clipboardRead` and `clipboardWrite`. Its host permissions cover HAS Admin, the EIL server candidates, the retired `gps3.local` address (so an older Settings value keeps working) and two local development addresses, which lets the popup read `/readyz` responses without CORS getting in the way. It also lists `https://*.google.com/*`, though nothing under `src/` currently requests a google.com URL.
+The manifest asks for `activeTab`, `scripting` (to run the map tools in the page), `sidePanel`, `storage`, `clipboardRead` and `clipboardWrite`. Its host permissions cover HAS Admin, the EIL server candidates, the retired `gps3.local` address (so an older Settings value keeps working) and two local development addresses, which lets PHAST read `/readyz` responses without CORS getting in the way. It also lists `https://*.google.com/*`, though nothing under `src/` currently requests a google.com URL.
 
 ## EIL server
 
@@ -119,7 +121,7 @@ The address is being migrated, so PHAST probes four candidates at the same time,
 3. `http://192.168.48.98:8080`, the LAN address. Needs no tailnet, so it's what an assessor on the PHIVOLCS network falls back to.
 4. `http://100.86.209.16:8080`, the Tailscale IP. Works on the tailnet without MagicDNS.
 
-Because the order is fixed, the deployment can move up the list without anyone changing a setting. To point PHAST somewhere else (a test instance, or a server that has moved), fill in Settings > EIL server URL. A value there turns auto-detection off completely, so a typo fails with an error instead of quietly using a different server.
+Because the order is fixed, the deployment can move up the list without anyone changing a setting. To point PHAST somewhere else (a test instance, or a server that has moved), fill in EIL server URL in Settings. A value there turns auto-detection off completely, so a typo fails with an error instead of quietly using a different server.
 
 If none is ready but one of them answered, PHAST reports that server's not-ready reason. If none of the four answers, you're probably off the PHIVOLCS network and not on the tailnet.
 
@@ -135,7 +137,7 @@ cd packages/eil-viz
 npm run dev
 ```
 
-Then set Settings > EIL server URL to `http://localhost:5173`.
+Then set EIL server URL in Settings to `http://localhost:5173`.
 
 ## Development
 
@@ -143,15 +145,17 @@ There's no build step and no `package.json`. Load the folder unpacked, edit, and
 
 | Path | Runs in | Does |
 | :--- | :--- | :--- |
-| `src/popup/` | Extension popup | UI, filename building, EIL probing, report assembly |
-| `src/content/scraper.js` | Page, isolated world | Reads metadata, the assessment table and coordinates; answers the popup's messages |
+| `src/popup/` | Side panel, or popup as a fallback | UI, filename building, EIL probing, report assembly |
+| `src/options/` | Settings page | Filename suffix and EIL server URL |
+| `src/content/scraper.js` | Page, isolated world | Reads metadata, the assessment table and coordinates; answers the side panel's messages |
 | `src/content/row-click.js` | Page, isolated world | Row-click checkbox toggle |
 | `src/inject/leaflet-loader.js` | Page, isolated world | Injects `map-handlers.js` into the page's own context |
 | `src/inject/map-handlers.js` | Page, main world | `window.PHAST.*`: overlay, KML import, ULAP, coordinates, GeoJSON export |
 | `src/lib/filename-generator.js` | Popup | Filename rules |
 | `src/lib/eil-handoff.js` | Popup | The link "Send to EIL-Viz" opens |
+| `src/lib/panel-tab.js` | Popup | When the side panel clears and rescans after a tab change |
 | `src/lib/har-engine/` | Popup | `rules.js` (text and thresholds), `models.js`, `engine.js` (decision logic), `table-row.js` (assessment table row to `Assessment`) |
-| `src/background/service-worker.js` | Background | Install log and a `PING` responder; nothing else |
+| `src/background/service-worker.js` | Background | Makes the toolbar icon open the side panel where the browser has one; a `PING` responder |
 | `src/vendor/` | Loaded by `map-handlers.js` | Leaflet.DistortableImage, PDF.js, JSZip. See [src/vendor/README.md](src/vendor/README.md) |
 
 ### Tests
@@ -160,13 +164,13 @@ There's no build step and no `package.json`. Load the folder unpacked, edit, and
 node --test
 ```
 
-105 tests in `tests/*.test.mjs`: the HAR engine, the table-row mapping in `table-row.js`, the shape of `rules.js`, the EIL-Viz handoff link in `eil-handoff.js`, and the overlay crop helpers in `map-handlers.js` (`window.PHAST.crop`). The crop tests load `map-handlers.js` in a Node vm and read the operator codes from the vendored PDF.js. Nothing tests the popup, the scraper or the map handlers' DOM and Leaflet code. Tested on Node 24.19.
+114 tests in `tests/*.test.mjs`: the HAR engine, the table-row mapping in `table-row.js`, the shape of `rules.js`, the EIL-Viz handoff link in `eil-handoff.js`, the side panel's rescan rules in `panel-tab.js`, and the overlay crop helpers in `map-handlers.js` (`window.PHAST.crop`). The crop tests load `map-handlers.js` in a Node vm and read the operator codes from the vendored PDF.js. Nothing tests the side panel page itself, the scraper or the map handlers' DOM and Leaflet code. Tested on Node 24.19.
 
 `tests/mock-page.html` is a stand-in HAS Admin page with a Leaflet map and three attachments, for trying the map tools: a synthetic vicinity map (`tests/fixtures/vicinity-map.png`), the same map pasted into a Word-style A4 page with margins and a caption (`tests/fixtures/vicinity-map-word.pdf`), and a KML. The fixtures are generated, not real places. Fetching attachments doesn't work from `file://`, so serve the repository root over HTTP (for example `python -m http.server 8765`) and open `http://localhost:8765/tests/mock-page.html`. With the extension installed, its content scripts run there only if the address is added to the manifest; without it, the page's "Load map handlers" button loads `src/inject/map-handlers.js` directly. The page loads Leaflet from unpkg, so it needs internet access. Its table doesn't have the column layout the Report tab reads.
 
 ### Releasing
 
-`manifest.json` holds the only version number; the popup header reads it from there. To publish a release:
+`manifest.json` holds the only version number; PHAST's header reads it from there. To publish a release:
 
 1. Bump `version` in `manifest.json` and merge that to main.
 2. Tag the merge with the same version and push the tag:
@@ -204,7 +208,7 @@ Both documents are distilled from PHIVOLCS sources: "HAR Templates (as of June 2
 
 Most of `rules.js` is text the engine copies into the report. Some of it is reference data the engine never reads: the `conditions` templates of every hazard except the PDZ, `gep_thresholds`, `gmma_ready_conditions`, `ground_shaking.palawan_sulu`, the `trigger` strings, the earthquake fissure `special_cases` (Muntinlupa), the Taal `fracture_zone_note`, and `ballistic_projectiles.applies_to`. The tables say where that matters.
 
-`applies_to` is checked for base surge and volcanic tsunami. Base surge outside its list is dropped silently. For volcanic tsunami, a status the assessor entered for a volcano not on the list is left out of the report and returned in `HAROutput.warnings`, which the popup shows above the report. The lists may lag behind the published maps, so a warning means "check", not "wrong". The volcanic fissure section is gated by the site's municipality instead, with `fissure.applies_to` as the fallback when the location can't be read.
+`applies_to` is checked for base surge and volcanic tsunami. Base surge outside its list is dropped silently. For volcanic tsunami, a status the assessor entered for a volcano not on the list is left out of the report and returned in `HAROutput.warnings`, which PHAST shows above the report. The lists may lag behind the published maps, so a warning means "check", not "wrong". The volcanic fissure section is gated by the site's municipality instead, with `fissure.applies_to` as the fallback when the location can't be read.
 
 ### docs/LOGIC_GUIDE.md
 
@@ -249,7 +253,7 @@ Most of `rules.js` is text the engine copies into the report. Some of it is refe
 
 These fields drive documented rules but have no column in the assessment table.
 
-| Field | Model | Rule it gates | Where the popup gets it |
+| Field | Model | Rule it gates | Where PHAST gets it |
 | :--- | :--- | :--- | :--- |
 | `fissure_distance_m` | `EarthquakeAssessment` | 1 km fissure trigger (Taal, Muntinlupa) | Not set; the engine reads the distance from the fissure status text |
 | `outside_watershed` | `VolcanoAssessment` | Distant gatekeeper regardless of distance | "Site is outside the volcano's watershed" checkbox |

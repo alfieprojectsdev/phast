@@ -1,12 +1,20 @@
 /* Base Styles */
+/* Minimums, not a fixed size: as a popup the page shrinks to 350x500, and in
+   the side panel it fills whatever width the assessor drags the panel to. */
 body {
-    width: 350px;
-    height: 500px;
+    min-width: 350px;
+    min-height: 500px;
     margin: 0;
     padding: 0;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     background-color: #f4f4f9;
     color: #333;
+}
+
+/* Set by popup.js when the toolbar button still opens a popup (no side panel
+   in this browser). A popup grows to fit its widest line, so pin it. */
+body.as-popup {
+    width: 350px;
 }
 
 .container {
@@ -32,6 +40,36 @@ header h1 {
 .version {
     font-size: 0.8rem;
     opacity: 0.8;
+}
+
+/* Which request the panel is showing; the panel outlives tab switches. */
+.current-request {
+    flex: 1;
+    margin: 0 10px;
+    font-size: 0.8rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.header-btn {
+    margin-left: 8px;
+    padding: 3px 8px;
+    font-size: 0.75rem;
+    background: #34495e;
+    color: white;
+    border: 1px solid #4a6378;
+}
+
+.header-btn:hover {
+    background: #3d566e;
+}
+
+/* Settings page (options_ui) */
+body.options {
+    min-width: 0;
+    min-height: 0;
+    padding: 12px;
 }
 
 /* Tabs */

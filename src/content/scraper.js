@@ -154,19 +154,3 @@ function scanCoords() {
 
     return { coords: null, kml: null };
 }
-
-// Phase 1: Auto-scrape on page load — push to session storage
-(function autoScrape() {
-    try {
-        const metadata = extractMetadata();
-        chrome.storage.session.set({ pageMetadata: metadata }, () => {
-            if (chrome.runtime.lastError) {
-                console.warn('PHAST: Could not save metadata to session storage:', chrome.runtime.lastError.message);
-            } else {
-                console.log('PHAST: Metadata auto-scraped and cached');
-            }
-        });
-    } catch (e) {
-        console.error('PHAST: Auto-scrape failed:', e);
-    }
-})();

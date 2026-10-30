@@ -7,9 +7,19 @@ import { HAZARD_RULES_SCHEMA } from '../lib/har-engine/rules.js';
 import { AssessmentCategory } from '../lib/har-engine/models.js';
 import { assessmentFromRow, findCategoryRow, COLUMNS } from '../lib/har-engine/table-row.js';
 import { eilVizUrl } from '../lib/eil-handoff.js';
+import { panelAction } from '../lib/panel-tab.js';
 
 let _currentMetadata = null;
 let _currentFilenames = [];
+
+// This page runs as a popup or as a side panel (see service-worker.js). The
+// side panel stays open across tab switches, so it tracks which tab its
+// details came from and rescans when the active tab changes.
+let _shownTabId = null;
+let _panelWindowId = null;
+// Bumped by every scan and reset, so a reply from a page the assessor has
+// since left can't overwrite what's on screen.
+let _scanSeq = 0;
 
 // Where the EIL stack is served. eil-calc and eil-viz sit behind one origin:
 // `/` is the eil-viz bundle, `/api/` proxies to eil-calc.
@@ -95,11 +105,29 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    // Pin the width only when this page really is the toolbar popup, not a
+    // side panel (which Chrome's own side panel menu can open too).
+    if (chrome.extension.getViews({ type: 'popup' }).includes(window)) {
+        document.body.classList.add('as-popup');
+    }
+
     // Initial Data Fetch
     fetchMetadata();
 
+    chrome.windows.getCurrent((win) => { _panelWindowId = win.id; });
+    const onTabEvent = (event) => {
+        const action = panelAction(_shownTabId, event, _panelWindowId);
+        if (action === 'clear') resetView();
+        else if (action === 'rescan') rescan();
+    };
+    chrome.tabs.onActivated.addListener(({ tabId, windowId }) =>
+        onTabEvent({ type: 'activated', tabId, windowId }));
+    chrome.tabs.onUpdated.addListener((tabId, info, tab) =>
+        onTabEvent({ type: 'updated', tabId, windowId: tab.windowId, active: tab.active, status: info.status }));
+
     // Event Listeners
-    document.getElementById('refresh-meta').addEventListener('click', fetchMetadata);
+    document.getElementById('refresh-meta').addEventListener('click', rescan);
+    document.getElementById('open-settings').addEventListener('click', () => chrome.runtime.openOptionsPage());
     document.getElementById('btn-overlay-map').addEventListener('click', () => injectMapScript('overlayVicinityMap'));
     document.getElementById('btn-import-kml').addEventListener('click', () => injectMapScript('importKML'));
     document.getElementById('btn-check-ulap').addEventListener('click', () => injectMapScript('checkULAP'));
@@ -116,21 +144,12 @@ document.addEventListener('DOMContentLoaded', () => {
     reportCategory.addEventListener('change', syncVolcanoOptions);
     syncVolcanoOptions();
 
-    document.getElementById('setting-suffix').addEventListener('input', (e) => {
-        chrome.storage.local.set({ hamSuffix: e.target.value });
-        fetchMetadata();
-    });
-
-    document.getElementById('setting-eil-base').addEventListener('input', (e) => {
-        chrome.storage.local.set({ eilBaseUrl: e.target.value });
-    });
-
-    // Load settings
-    chrome.storage.local.get(['hamSuffix', 'eilBaseUrl'], (res) => {
-        if (res.hamSuffix) document.getElementById('setting-suffix').value = res.hamSuffix;
-        // Left blank when unset, so the placeholder advertises auto-detection.
-        // Pre-filling a candidate would silently pin the extension to it.
-        document.getElementById('setting-eil-base').value = res.eilBaseUrl || '';
+    // Settings live on the options page. The suffix only changes the filenames,
+    // so rebuild those and leave the rest (a generated report, say) alone.
+    chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === 'local' && changes.hamSuffix && _currentMetadata && _shownTabId !== null) {
+            fetchHazardsForFilenames(_currentMetadata, changes.hamSuffix.newValue || 'ArP', _shownTabId, _scanSeq);
+        }
     });
 
     // Copy Report Listener
@@ -169,73 +188,103 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
+const META_FIELDS = ['req-id', 'req-loc', 'req-client'];
+
+// Empties everything that belongs to the page last scanned.
+function resetView() {
+    _scanSeq++;
+    _currentMetadata = null;
+    _currentFilenames = [];
+    for (const id of META_FIELDS) {
+        const el = document.getElementById(id);
+        el.value = '';
+        el.placeholder = 'Scanning...';
+    }
+    document.getElementById('current-request').textContent = '';
+    document.getElementById('filename-list').innerHTML = '<div class="placeholder">No filenames generated yet.</div>';
+    document.getElementById('discovery-card').style.display = 'none';
+    document.getElementById('report-output').value = '';
+    _showReportWarnings([]);
+    _setEILStatus(document.getElementById('eil-status'), '', '');
+}
+
+function rescan() {
+    resetView();
+    fetchMetadata();
+}
+
+function showNoRequestPage() {
+    for (const id of META_FIELDS) {
+        const el = document.getElementById(id);
+        el.value = '';
+        el.placeholder = 'Not a HAS Admin request page';
+    }
+    document.getElementById('current-request').textContent = 'No request page';
+    document.getElementById('filename-list').innerHTML =
+        '<div class="placeholder">Open a HAS Admin request to generate filenames.</div>';
+}
+
 function fetchMetadata() {
-    // Try session storage first (instant, from auto-scrape)
-    chrome.storage.session.get(['pageMetadata'], (stored) => {
-        if (stored.pageMetadata && stored.pageMetadata.requestId) {
-            handleMetadata(stored.pageMetadata);
-            scanAndShowDiscovery();
-            return;
-        }
+    const seq = ++_scanSeq;
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const tab = tabs[0];
+        if (!tab || seq !== _scanSeq) return;
+        _shownTabId = tab.id;
 
-        // Fallback: message the content script directly
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            if (!tabs[0]) return;
-
-            chrome.tabs.sendMessage(tabs[0].id, { action: 'GET_PAGE_METADATA' }, (response) => {
-                if (chrome.runtime.lastError) {
-                    console.warn('Could not connect to content script:', chrome.runtime.lastError.message);
-                    document.getElementById('req-id').placeholder = 'Error connecting...';
-                    return;
-                }
-
-                if (response) {
-                    handleMetadata(response);
-                    scanAndShowDiscovery();
-                }
-            });
+        chrome.tabs.sendMessage(tab.id, { action: 'GET_PAGE_METADATA' }, (response) => {
+            // Reading lastError also keeps Chrome from logging it as unchecked.
+            const failed = chrome.runtime.lastError || !response;
+            if (seq !== _scanSeq) return;
+            if (failed) {
+                // No content script answered: not a HAS Admin page, or it hasn't loaded yet.
+                showNoRequestPage();
+                return;
+            }
+            handleMetadata(response, tab.id, seq);
+            scanAndShowDiscovery(tab.id, seq);
         });
     });
 }
 
-function handleMetadata(response) {
+function handleMetadata(response, tabId, seq) {
     _currentMetadata = response;
     document.getElementById('req-id').value = response.requestId || 'Not found';
     document.getElementById('req-client').value = response.client || 'Not found';
     document.getElementById('req-loc').value = response.location || 'Not found';
+    document.getElementById('current-request').textContent = response.requestId || '';
 
     chrome.storage.local.get(['hamSuffix'], (res) => {
         const suffix = res.hamSuffix || 'ArP';
-        fetchHazardsForFilenames(response, suffix);
+        fetchHazardsForFilenames(response, suffix, tabId, seq);
     });
 }
 
-function fetchHazardsForFilenames(metadata, suffix) {
+function fetchHazardsForFilenames(metadata, suffix, tabId, seq) {
+    if (seq !== _scanSeq) return;
     if (metadata.hazardType && metadata.hazardType.length > 0) {
         const filenames = generateFilenames(metadata, suffix);
         renderFilenames(filenames);
         return;
     }
 
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        chrome.tabs.sendMessage(tabs[0].id, { action: 'GET_TABLE_DATA' }, (rows) => {
-            const text = rows ? rows.map(r => r.join(' ')).join(' ') : "";
-            const hazards = [];
-            if (text.match(/active fault/i)) hazards.push('Active Fault');
-            if (text.match(/liquefaction/i)) hazards.push('Liquefaction');
-            if (text.match(/landslide/i)) hazards.push('Landslide - Earthquake - Induced');
-            if (text.match(/tsunami/i) && !text.match(/volcanic tsunami/i)) hazards.push('Tsunami');
-            if (text.match(/lahar/i)) hazards.push('Lahar');
-            if (text.match(/pyroclastic/i)) hazards.push('Pyroclastic Flow');
-            if (text.match(/base surge/i)) hazards.push('Base Surge');
-            if (text.match(/lava flow/i)) hazards.push('Lava Flow');
-            if (text.match(/ballistic/i)) hazards.push('Ballistic Projectiles');
-            if (text.match(/volcanic tsunami/i)) hazards.push('Volcanic Tsunami');
+    chrome.tabs.sendMessage(tabId, { action: 'GET_TABLE_DATA' }, (rows) => {
+        if (chrome.runtime.lastError || seq !== _scanSeq) return;
+        const text = rows ? rows.map(r => r.join(' ')).join(' ') : "";
+        const hazards = [];
+        if (text.match(/active fault/i)) hazards.push('Active Fault');
+        if (text.match(/liquefaction/i)) hazards.push('Liquefaction');
+        if (text.match(/landslide/i)) hazards.push('Landslide - Earthquake - Induced');
+        if (text.match(/tsunami/i) && !text.match(/volcanic tsunami/i)) hazards.push('Tsunami');
+        if (text.match(/lahar/i)) hazards.push('Lahar');
+        if (text.match(/pyroclastic/i)) hazards.push('Pyroclastic Flow');
+        if (text.match(/base surge/i)) hazards.push('Base Surge');
+        if (text.match(/lava flow/i)) hazards.push('Lava Flow');
+        if (text.match(/ballistic/i)) hazards.push('Ballistic Projectiles');
+        if (text.match(/volcanic tsunami/i)) hazards.push('Volcanic Tsunami');
 
-            metadata.hazardType = hazards;
-            const filenames = generateFilenames(metadata, suffix);
-            renderFilenames(filenames);
-        });
+        metadata.hazardType = hazards;
+        const filenames = generateFilenames(metadata, suffix);
+        renderFilenames(filenames);
     });
 }
 
@@ -268,13 +317,10 @@ function injectMapScript(fnName) {
     });
 }
 
-function scanAndShowDiscovery() {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (!tabs[0]) return;
-        chrome.tabs.sendMessage(tabs[0].id, { action: 'SCAN_COORDS' }, (result) => {
-            if (chrome.runtime.lastError || !result || (!result.coords && !result.kml)) return;
-            showDiscoveryCard(result);
-        });
+function scanAndShowDiscovery(tabId, seq) {
+    chrome.tabs.sendMessage(tabId, { action: 'SCAN_COORDS' }, (result) => {
+        if (chrome.runtime.lastError || seq !== _scanSeq || !result || (!result.coords && !result.kml)) return;
+        showDiscoveryCard(result);
     });
 }
 
@@ -433,8 +479,8 @@ function _showReportWarnings(warnings) {
 
 function generateReport() {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        // Read the location from this tab, not _currentMetadata: that can come from the
-        // session cache, which holds the last page scraped in any tab.
+        // Read the location from this tab now, not _currentMetadata, so the report
+        // always matches the page in front even if a rescan is still in flight.
         chrome.tabs.sendMessage(tabs[0].id, { action: 'GET_PAGE_METADATA' }, (meta) => {
         const siteLocation = (!chrome.runtime.lastError && meta && meta.location) || '';
         chrome.tabs.sendMessage(tabs[0].id, { action: 'GET_TABLE_DATA' }, (rows) => {

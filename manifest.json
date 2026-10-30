@@ -7,6 +7,7 @@
   "permissions": [
     "activeTab",
     "scripting",
+    "sidePanel",
     "storage",
     "clipboardRead",
     "clipboardWrite"
@@ -22,6 +23,13 @@
     "http://127.0.0.1:8000/*",
     "http://localhost:5173/*"
   ],
+  "side_panel": {
+    "default_path": "src/popup/index.html"
+  },
+  "options_ui": {
+    "page": "src/options/index.html",
+    "open_in_tab": false
+  },
   "background": {
     "service_worker": "src/background/service-worker.js"
   },

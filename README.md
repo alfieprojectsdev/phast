@@ -108,7 +108,7 @@ Settings open from the Settings button in PHAST's header, or from "Options" when
 - Filename Suffix is appended to every filename. Default `ArP`.
 - EIL server URL is blank by default, which means auto-detect. See below.
 
-The manifest asks for `activeTab`, `scripting` (to run the map tools in the page), `sidePanel`, `storage`, `clipboardRead` and `clipboardWrite`. Its host permissions cover HAS Admin, the EIL server candidates, the retired `gps3.local` address (so an older Settings value keeps working) and two local development addresses, which lets PHAST read `/readyz` responses without CORS getting in the way. It also lists `https://*.google.com/*`, though nothing under `src/` currently requests a google.com URL.
+The manifest asks for `activeTab`, `scripting` (to run the map tools in the page), `sidePanel`, `storage`, `clipboardRead` and `clipboardWrite`. Its host permissions cover HAS Admin at both its addresses (`hasadmin.phivolcs.dost.gov.ph` and, since the November 2026 move, `hasadmin.georisk.gov.ph`), the EIL server candidates, the retired `gps3.local` address (so an older Settings value keeps working) and two local development addresses, which lets PHAST read `/readyz` responses without CORS getting in the way. It also lists `https://*.google.com/*`, though nothing under `src/` currently requests a google.com URL.
 
 ## EIL server
 

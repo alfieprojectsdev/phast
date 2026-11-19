@@ -1203,6 +1203,76 @@ window.PHAST.checkULAP = function () {
     }
 };
 
+// --- UNNAMED FAULT: LINE AND MUNICIPALITIES (for the Report tab) ---
+// HAS Admin's assessment says only "...of the Unnamed Fault"; the template
+// wants the municipalities it traverses. This reads what HAS Admin's own map
+// already has: the distance line it draws from the parcel to the nearest
+// fault, the ActiveFault layer, and the PSA Municipal layer (the page global
+// mun_boundary). Queries go through those layers, which carry the page's
+// token, so PHAST never handles it. Returns plain data for the side panel,
+// which orders and formats the list (src/lib/fault-lgus.js).
+window.PHAST.unnamedFaultData = async function () {
+    const fail = reason => ({ ok: false, reason });
+    if (typeof map === 'undefined' || typeof L === 'undefined' || !L.esri) return fail('The HAS Admin map isn\'t loaded on this page.');
+    if (typeof mun_boundary === 'undefined') return fail('This page has no PSA Municipality layer.');
+
+    let faults = null, distanceLine = null;
+    map.eachLayer(l => {
+        if (l instanceof L.esri.DynamicMapLayer && /\/ActiveFault\/MapServer/.test(String(l.options.url))) faults = l;
+        // HAS Admin draws the parcel-to-fault distance as a two-point polygon with a "Distance:" popup.
+        if (l instanceof L.Polygon && l.getLatLngs().flat(Infinity).length === 2 &&
+            l.getPopup && l.getPopup() && /Distance/i.test(String(l.getPopup().getContent()))) distanceLine = l;
+    });
+    if (!faults) return fail('The Active Fault layer isn\'t on the map.');
+    if (!distanceLine) return fail('HAS Admin\'s distance line to the nearest fault isn\'t on the map. Run the assessment first.');
+
+    const run = query => new Promise((resolve, reject) =>
+        query.run((err, fc) => err ? reject(new Error(err.message || String(err.code))) : resolve(fc)));
+    const toLatLngs = coords => coords.map(c => L.latLng(c[1], c[0]));
+    const distanceTo = (point, feature) => {
+        const parts = feature.geometry.type === 'LineString' ? [feature.geometry.coordinates] : feature.geometry.coordinates;
+        const p = map.latLngToLayerPoint(point);
+        let best = Infinity;
+        for (const part of parts) {
+            const pts = toLatLngs(part).map(ll => map.latLngToLayerPoint(ll));
+            for (let i = 0; i < pts.length - 1; i++) {
+                const c = map.layerPointToLatLng(L.LineUtil.closestPointOnSegment(p, pts[i], pts[i + 1]));
+                best = Math.min(best, point.distanceTo(c));
+            }
+        }
+        return best;
+    };
+
+    try {
+        // The fault end of the distance line is the one with a fault under it.
+        let fault = null;
+        for (const end of distanceLine.getLatLngs().flat(Infinity)) {
+            const fc = await run(faults.query().layer(0).nearby(end, 50).returnGeometry(true));
+            if (fc.features.length) {
+                fault = fc.features.reduce((a, b) => distanceTo(end, a) <= distanceTo(end, b) ? a : b);
+                break;
+            }
+        }
+        if (!fault) return fail('Couldn\'t find the fault at the end of HAS Admin\'s distance line.');
+        if (fault.geometry.type !== 'LineString') return fail('The fault isn\'t a single line, so its municipalities can\'t be ordered.');
+
+        const line = fault.geometry.coordinates;
+        const fc = await run(mun_boundary.query().layer(0).intersects(L.polyline(toLatLngs(line))).returnGeometry(true));
+        return {
+            ok: true,
+            line,
+            municipalities: fc.features.map(f => ({
+                name: f.properties.city_name,
+                province: f.properties.prov_name,
+                psgc: f.properties.psgc_10d,
+                geometry: f.geometry,
+            })),
+        };
+    } catch (e) {
+        return fail('HAS Admin\'s map server didn\'t answer: ' + e.message);
+    }
+};
+
 // --- GET DRAWN GEOJSON (for EIL-Viz handoff) ---
 window.PHAST.getDrawnGeoJSON = function () {
     if (typeof drawnItems === 'undefined') return null;

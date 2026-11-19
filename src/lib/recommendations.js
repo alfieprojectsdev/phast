@@ -24,6 +24,21 @@ function similarity(a, b) {
     return shared / (A.size + B.size - shared || 1);
 }
 
+// HAS Admin's library and the assessment's statements write volcano names as
+// {{AV}} (nearest active volcano) and {{PAV}} (nearest potentially active
+// volcano), filled in when it renders the HAR; PHAST's report has the names
+// themselves. To compare them, both sides write the report's volcano names,
+// and the placeholders, as one token.
+const VOLCANO_TOKEN = '{{volcano}}';
+function canonical(names) {
+    const keys = names.map(n => norm(n)).filter(Boolean).sort((a, b) => b.length - a.length);
+    return text => {
+        let t = norm(text).replace(/\{\{\s*p?av\s*\}\}/g, VOLCANO_TOKEN);
+        for (const k of keys) t = t.split(k + ' volcano').join(VOLCANO_TOKEN + ' volcano');
+        return t;
+    };
+}
+
 const sentences = text => String(text).split(/(?<=\.)\s+(?=[A-Z])/).map(s => s.trim()).filter(Boolean);
 
 /**
@@ -71,7 +86,8 @@ export function reportStatements(har) {
  *   missing: {statement: string, where: string}[], extra: {text: string}[]
  * }}
  */
-export function planSelection(statements, library, selected, { category, volcano = '' }) {
+export function planSelection(statements, library, selected, { category, volcano = '', pav = '' }) {
+    const norm = canonical([volcano, pav]);
     const cat = norm(category);
     const volc = norm(volcano);
     const candidates = library.filter(r => norm(r.category) === cat &&
@@ -102,7 +118,7 @@ export function planSelection(statements, library, selected, { category, volcano
                 continue;
             }
         }
-        const best = candidates.map(r => [r, similarity(st.text, r.text)]).sort((a, b) => b[1] - a[1])[0];
+        const best = candidates.map(r => [r, similarity(norm(st.text), norm(r.text))]).sort((a, b) => b[1] - a[1])[0];
         if (best && best[1] >= NEAR_THRESHOLD) {
             plan.near.push({ statement: st.text, where: st.where, id: best[0].id, libraryText: best[0].text, score: best[1] });
         } else {
@@ -115,8 +131,30 @@ export function planSelection(statements, library, selected, { category, volcano
     return plan;
 }
 
-/** The nearest volcano's name from a "...of Taal Volcano" cell, or "". */
-export function volcanoName(cell) {
-    const m = /\bof\s+(?:the\s+)?(.+?)\s+Volcano\b/i.exec(String(cell || ''));
-    return m ? m[1].trim() : '';
+/**
+ * The order the assessment's statements should take, following the report:
+ * intro, hazard sections, common statements, supersedes. Numbered from 0, as
+ * HAS Admin's Order dropdowns are. Statements the report doesn't use go last,
+ * unnumbered, so they stand out for review. PHAST only shows this order; the
+ * assessor sets the dropdowns, each of which saves as soon as it changes.
+ *
+ * @param {{text: string}[]} statements  From reportStatements(), in report order
+ * @param {{text: string, order?: string|null}[]} selected  The assessment's statements
+ * @returns {{text: string, current: number|null, suggested: number|null}[]}
+ */
+export function suggestOrder(statements, selected, { volcano = '', pav = '' } = {}) {
+    const norm = canonical([volcano, pav]);
+    const covers = (sel, st) => norm(sel) === norm(st) || norm(sel).includes(norm(st)) || norm(st).includes(norm(sel));
+    const ranked = selected.map((s, i) => {
+        const index = statements.findIndex(st => covers(s.text, st.text));
+        const current = s.order === null || s.order === undefined || s.order === '' ? null : Number(s.order);
+        return { text: s.text, current: Number.isNaN(current) ? null : current, index, position: i };
+    });
+    const inReport = ranked.filter(r => r.index >= 0)
+        .sort((a, b) => a.index - b.index || (a.current ?? a.position) - (b.current ?? b.position));
+    const notInReport = ranked.filter(r => r.index < 0);
+    return [
+        ...inReport.map((r, n) => ({ text: r.text, current: r.current, suggested: n })),
+        ...notInReport.map(r => ({ text: r.text, current: r.current, suggested: null })),
+    ];
 }

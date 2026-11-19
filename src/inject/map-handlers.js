@@ -1337,7 +1337,10 @@ window.PHAST.recommendationLibrary = async function (category) {
         }
         const selected = Array.from(document.querySelectorAll('#rec-grid-tmp tbody tr'))
             .filter(tr => tr.querySelector('input[type=checkbox]'))
-            .map(tr => ({ text: tr.cells[tr.cells.length - 1].innerText.replace(/\s+/g, ' ').trim() }));
+            .map(tr => {
+                const order = tr.querySelector('select');
+                return { text: tr.cells[tr.cells.length - 1].innerText.replace(/\s+/g, ' ').trim(), order: order ? order.value : null };
+            });
         return { ok: true, assessmentId: params.get('id'), library, selected };
     } catch (e) {
         return fail('Couldn\'t read the recommendation library: ' + e.message);

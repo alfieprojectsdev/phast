@@ -5,7 +5,7 @@
  */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { reportStatements, planSelection, volcanoName } from '../src/lib/recommendations.js';
+import { reportStatements, planSelection, suggestOrder } from '../src/lib/recommendations.js';
 
 const row = (id, category, volcano, text) => ({ id, category, volcano, text });
 
@@ -101,10 +101,73 @@ describe('reportStatements', () => {
     });
 });
 
-describe('volcanoName', () => {
-    test('reads the volcano from the nearest-volcano cell', () => {
-        assert.equal(volcanoName('Approximately 12.3 km northeast of Taal Volcano'), 'Taal');
-        assert.equal(volcanoName('Approximately 40 kilometers south of Mayon Volcano'), 'Mayon');
-        assert.equal(volcanoName('--'), '');
+describe('suggestOrder', () => {
+    const statements = ['Intro.', 'Ground rupture explanation.', 'Ground rupture recommendation.', 'All sites may be affected by strong ground shaking.', 'Supersedes.'].map(text => ({ text }));
+
+    test('numbers the statements in report order, from 0', () => {
+        const selected = [
+            { text: 'Supersedes.', order: '0' },
+            { text: 'Intro.', order: '1' },
+            { text: 'All sites may be affected by strong ground shaking.', order: '2' },
+        ];
+        assert.deepEqual(suggestOrder(statements, selected).map(r => [r.text, r.current, r.suggested]), [
+            ['Intro.', 1, 0],
+            ['All sites may be affected by strong ground shaking.', 2, 1],
+            ['Supersedes.', 0, 2],
+        ]);
+    });
+
+    test('a combined row takes the place of its first statement', () => {
+        const selected = [
+            { text: 'Supersedes.', order: '1' },
+            { text: 'Ground rupture explanation. Ground rupture recommendation.', order: '0' },
+        ];
+        assert.deepEqual(suggestOrder(statements, selected).map(r => r.suggested), [0, 1]);
+        assert.equal(suggestOrder(statements, selected)[0].text, 'Ground rupture explanation. Ground rupture recommendation.');
+    });
+
+    test('statements the report does not use go last, unnumbered', () => {
+        const selected = [{ text: 'Something else entirely.', order: '0' }, { text: 'Intro.', order: '1' }];
+        assert.deepEqual(suggestOrder(statements, selected).map(r => [r.text, r.suggested]), [['Intro.', 0], ['Something else entirely.', null]]);
+    });
+
+    test('a missing order reads as null', () => {
+        assert.equal(suggestOrder(statements, [{ text: 'Intro.' }])[0].current, null);
+    });
+});
+
+describe('{{AV}} and {{PAV}} placeholders', () => {
+    const PAV_ROW = row('180', 'Volcano', 'N/A', '{{PAV}} Volcano is currently classified by DOST-PHIVOLCS as a potentially active volcano.');
+    const AV_ROW = row('181', 'Volcano', 'N/A', 'The site is outside the Permanent Danger Zone of {{AV}} Volcano.');
+    const report = [
+        st('Arayat Volcano is currently classified by DOST-PHIVOLCS as a potentially active volcano.'),
+        st('The site is outside the Permanent Danger Zone of Pinatubo Volcano.'),
+    ];
+
+    test('a library row with a placeholder matches the report statement with the name filled in', () => {
+        const plan = planSelection(report, [PAV_ROW, AV_ROW], [], { category: 'Volcano', volcano: 'Pinatubo', pav: 'Arayat' });
+        assert.deepEqual(plan.toTick.map(t => t.id).sort(), ['180', '181']);
+    });
+
+    test('a selected row with a placeholder counts as present', () => {
+        const plan = planSelection(report.slice(0, 1), [PAV_ROW], [{ text: PAV_ROW.text }], { category: 'Volcano', volcano: 'Pinatubo', pav: 'Arayat' });
+        assert.equal(plan.present.length, 1);
+        assert.equal(plan.extra.length, 0);
+    });
+
+    test('without the PAV name it is not ticked', () => {
+        const plan = planSelection(report.slice(0, 1), [PAV_ROW], [], { category: 'Volcano', volcano: 'Pinatubo' });
+        assert.equal(plan.toTick.length, 0);
+    });
+
+    test('a {{PAV}} row on an earthquake assessment is listed as not in the report', () => {
+        const eq = [st('All sites may be affected by strong ground shaking.')];
+        const plan = planSelection(eq, LIBRARY, [{ text: PAV_ROW.text }], { category: 'Earthquake' });
+        assert.deepEqual(plan.extra.map(e => e.text), [PAV_ROW.text]);
+    });
+
+    test('suggestOrder places a placeholder row where its statement is', () => {
+        const order = suggestOrder(report, [{ text: AV_ROW.text, order: '0' }, { text: PAV_ROW.text, order: '1' }], { volcano: 'Pinatubo', pav: 'Arayat' });
+        assert.deepEqual(order.map(r => [r.text, r.suggested]), [[PAV_ROW.text, 0], [AV_ROW.text, 1]]);
     });
 });

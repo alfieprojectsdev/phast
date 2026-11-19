@@ -5,7 +5,7 @@
  */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { reportStatements, planSelection, volcanoName } from '../src/lib/recommendations.js';
+import { reportStatements, planSelection, volcanoName, suggestOrder } from '../src/lib/recommendations.js';
 
 const row = (id, category, volcano, text) => ({ id, category, volcano, text });
 
@@ -106,5 +106,40 @@ describe('volcanoName', () => {
         assert.equal(volcanoName('Approximately 12.3 km northeast of Taal Volcano'), 'Taal');
         assert.equal(volcanoName('Approximately 40 kilometers south of Mayon Volcano'), 'Mayon');
         assert.equal(volcanoName('--'), '');
+    });
+});
+
+describe('suggestOrder', () => {
+    const statements = ['Intro.', 'Ground rupture explanation.', 'Ground rupture recommendation.', 'All sites may be affected by strong ground shaking.', 'Supersedes.'].map(text => ({ text }));
+
+    test('numbers the statements in report order, from 0', () => {
+        const selected = [
+            { text: 'Supersedes.', order: '0' },
+            { text: 'Intro.', order: '1' },
+            { text: 'All sites may be affected by strong ground shaking.', order: '2' },
+        ];
+        assert.deepEqual(suggestOrder(statements, selected).map(r => [r.text, r.current, r.suggested]), [
+            ['Intro.', 1, 0],
+            ['All sites may be affected by strong ground shaking.', 2, 1],
+            ['Supersedes.', 0, 2],
+        ]);
+    });
+
+    test('a combined row takes the place of its first statement', () => {
+        const selected = [
+            { text: 'Supersedes.', order: '1' },
+            { text: 'Ground rupture explanation. Ground rupture recommendation.', order: '0' },
+        ];
+        assert.deepEqual(suggestOrder(statements, selected).map(r => r.suggested), [0, 1]);
+        assert.equal(suggestOrder(statements, selected)[0].text, 'Ground rupture explanation. Ground rupture recommendation.');
+    });
+
+    test('statements the report does not use go last, unnumbered', () => {
+        const selected = [{ text: 'Something else entirely.', order: '0' }, { text: 'Intro.', order: '1' }];
+        assert.deepEqual(suggestOrder(statements, selected).map(r => [r.text, r.suggested]), [['Intro.', 0], ['Something else entirely.', null]]);
+    });
+
+    test('a missing order reads as null', () => {
+        assert.equal(suggestOrder(statements, [{ text: 'Intro.' }])[0].current, null);
     });
 });

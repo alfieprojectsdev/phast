@@ -9,7 +9,7 @@ import { assessmentFromRow, findCategoryRow, COLUMNS } from '../lib/har-engine/t
 import { eilVizUrl } from '../lib/eil-handoff.js';
 import { panelAction } from '../lib/panel-tab.js';
 import { indexMunicipalities, municipalitiesAlong, formatTraversed, mentionsUnnamedFault, unnamedFaultStatus } from '../lib/fault-lgus.js';
-import { reportStatements, planSelection, volcanoName } from '../lib/recommendations.js';
+import { reportStatements, planSelection, volcanoName, suggestOrder } from '../lib/recommendations.js';
 
 let _currentMetadata = null;
 let _currentFilenames = [];
@@ -766,7 +766,8 @@ async function selectRecommendations() {
             }
             tickedIds = res.ticked;
         }
-        _showRecResult(renderRecommendationPlan(plan, tickedIds, page, report.category));
+        _showRecResult(renderRecommendationPlan(plan, tickedIds, page, report.category) +
+            renderSuggestedOrder(suggestOrder(report.statements, lib.selected)));
     } finally {
         btn.disabled = false;
     }
@@ -802,4 +803,21 @@ function renderRecommendationPlan(plan, tickedIds, page, category) {
             li(plan.extra.map(e => short(e.text))));
     }
     return parts.map(p => `<p>${p}</p>`).join('');
+}
+
+// Read-only: the assessor sets each Order dropdown, so every statement gets
+// looked at. Statements the report doesn't use are listed last, unnumbered.
+function renderSuggestedOrder(order) {
+    if (!order.length) return '';
+    const short = s => s.length > 90 ? s.slice(0, 87) + '...' : s;
+    const rows = order.map(r => {
+        const now = r.current === null ? 'no order set' : `now ${r.current}`;
+        if (r.suggested === null) return `<li><strong>Not in the report</strong> (${now}): ${_escHtml(short(r.text))}</li>`;
+        const differs = r.current !== r.suggested ? ' <strong>(change)</strong>' : '';
+        return `<li><strong>${r.suggested}</strong> (${now})${differs}: ${_escHtml(short(r.text))}</li>`;
+    }).join('');
+    const changes = order.filter(r => r.suggested !== null && r.current !== r.suggested).length;
+    return `<p><strong>Suggested order for the assessment's statements</strong> (set the Order dropdowns yourself; each change saves at once). ` +
+        `${changes ? `${changes} to change.` : 'All already in order.'} Covers statements already added; after adding more, press Select recommendations again.</p>` +
+        `<ul class="suggested-order">${rows}</ul>`;
 }

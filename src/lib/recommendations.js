@@ -120,3 +120,30 @@ export function volcanoName(cell) {
     const m = /\bof\s+(?:the\s+)?(.+?)\s+Volcano\b/i.exec(String(cell || ''));
     return m ? m[1].trim() : '';
 }
+
+/**
+ * The order the assessment's statements should take, following the report:
+ * intro, hazard sections, common statements, supersedes. Numbered from 0, as
+ * HAS Admin's Order dropdowns are. Statements the report doesn't use go last,
+ * unnumbered, so they stand out for review. PHAST only shows this order; the
+ * assessor sets the dropdowns, each of which saves as soon as it changes.
+ *
+ * @param {{text: string}[]} statements  From reportStatements(), in report order
+ * @param {{text: string, order?: string|null}[]} selected  The assessment's statements
+ * @returns {{text: string, current: number|null, suggested: number|null}[]}
+ */
+export function suggestOrder(statements, selected) {
+    const covers = (sel, st) => norm(sel) === norm(st) || norm(sel).includes(norm(st)) || norm(st).includes(norm(sel));
+    const ranked = selected.map((s, i) => {
+        const index = statements.findIndex(st => covers(s.text, st.text));
+        const current = s.order === null || s.order === undefined || s.order === '' ? null : Number(s.order);
+        return { text: s.text, current: Number.isNaN(current) ? null : current, index, position: i };
+    });
+    const inReport = ranked.filter(r => r.index >= 0)
+        .sort((a, b) => a.index - b.index || (a.current ?? a.position) - (b.current ?? b.position));
+    const notInReport = ranked.filter(r => r.index < 0);
+    return [
+        ...inReport.map((r, n) => ({ text: r.text, current: r.current, suggested: n })),
+        ...notInReport.map(r => ({ text: r.text, current: r.current, suggested: null })),
+    ];
+}

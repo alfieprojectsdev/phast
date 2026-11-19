@@ -21,6 +21,10 @@ let _panelWindowId = null;
 // Bumped by every scan and reset, so a reply from a page the assessor has
 // since left can't overwrite what's on screen.
 let _scanSeq = 0;
+// Bumped by every report and reset, so an unnamed-fault lookup that finishes
+// late can't show its suggestion beside a different report.
+let _faultLookup = 0;
+const SHORT_CROSSING_M = 1000;
 
 // Where the EIL stack is served. eil-calc and eil-viz sit behind one origin:
 // `/` is the eil-viz bundle, `/api/` proxies to eil-calc.
@@ -576,8 +580,6 @@ function generateReport() {
 // municipalities the fault traverses (src/lib/fault-lgus.js). The page reads
 // the fault and the PSA municipalities from HAS Admin's map; this orders and
 // formats them. Shown beside the report as a suggestion, never inside it.
-let _faultLookup = 0;
-const SHORT_CROSSING_M = 1000;
 
 function _clearFaultSuggestion() {
     _faultLookup++;

@@ -660,6 +660,8 @@ let _recOpenUrl = null;
 function assessmentIdOfPage(url) {
     try {
         const u = new URL(url);
+        // Only real HAS Admin pages: this URL is also what "Open recommendations page" navigates to.
+        if (u.protocol !== 'https:' && u.protocol !== 'file:') return null;
         return u.searchParams.get('r') === 'Assessment/updateRemarks' ? u.searchParams.get('id') : null;
     } catch {
         return null;
@@ -721,6 +723,8 @@ function showRecommendationsCard(tab, seq) {
             hint: `Report for request ${report.requestId || '?'} (${report.category}), generated at ${time}. PHAST ticks the statements this assessment doesn't have yet; you check them and click Add Recommendation.`,
             report,
         });
+        // The Select button lives in the Report tab; bring it forward on this page.
+        document.querySelector('.tab-btn[data-tab="report"]').click();
     });
 }
 

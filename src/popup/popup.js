@@ -819,5 +819,5 @@ function renderSuggestedOrder(order) {
     const changes = order.filter(r => r.suggested !== null && r.current !== r.suggested).length;
     return `<p><strong>Suggested order for the assessment's statements</strong> (set the Order dropdowns yourself; each change saves at once). ` +
         `${changes ? `${changes} to change.` : 'All already in order.'} Covers statements already added; after adding more, press Select recommendations again.</p>` +
-        `<ul class="suggested-order">${rows}</ul>`;
+        `<ul>${rows}</ul>`;
 }

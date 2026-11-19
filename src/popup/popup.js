@@ -9,6 +9,7 @@ import { assessmentFromRow, findCategoryRow, COLUMNS } from '../lib/har-engine/t
 import { eilVizUrl } from '../lib/eil-handoff.js';
 import { panelAction } from '../lib/panel-tab.js';
 import { indexMunicipalities, municipalitiesAlong, formatTraversed, mentionsUnnamedFault, unnamedFaultStatus } from '../lib/fault-lgus.js';
+import { reportStatements, planSelection, volcanoName } from '../lib/recommendations.js';
 
 let _currentMetadata = null;
 let _currentFilenames = [];
@@ -158,6 +159,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Copy Report Listener
+    document.getElementById('btn-select-recs').addEventListener('click', selectRecommendations);
+    document.getElementById('btn-open-recs').addEventListener('click', () => {
+        if (_recOpenUrl && _shownTabId !== null) chrome.tabs.update(_shownTabId, { url: _recOpenUrl });
+    });
+
     document.getElementById('btn-copy-suggestion').addEventListener('click', () => {
         const btn = document.getElementById('btn-copy-suggestion');
         navigator.clipboard.writeText(btn.dataset.text || '').then(() => {
@@ -219,6 +225,7 @@ function resetView() {
     document.getElementById('report-output').value = '';
     _showReportWarnings([]);
     _clearFaultSuggestion();
+    _hideRecommendationsCard();
     _setEILStatus(document.getElementById('eil-status'), '', '');
 }
 
@@ -244,6 +251,7 @@ function fetchMetadata() {
         const tab = tabs[0];
         if (!tab || seq !== _scanSeq) return;
         _shownTabId = tab.id;
+        showRecommendationsCard(tab, seq);
 
         chrome.tabs.sendMessage(tab.id, { action: 'GET_PAGE_METADATA' }, (response) => {
             // Reading lastError also keeps Chrome from logging it as unchecked.
@@ -552,19 +560,20 @@ function generateReport() {
                 });
                 text += "\n";
 
-                text += `Supersedes: ${harOutput.supersedes}\n\n`;
-
-                if (harOutput.boilerplate && Object.keys(harOutput.boilerplate).length > 0) {
-                    text += "[Disclaimers]\n";
-                    for (const key in harOutput.boilerplate) {
-                        text += `- ${harOutput.boilerplate[key]}\n`;
-                    }
-                }
+                // The boilerplate disclaimers (harOutput.boilerplate) are left out:
+                // HAS Admin prints them on every HAR itself, and they can't be edited.
+                text += `Supersedes: ${harOutput.supersedes}\n`;
 
                 document.getElementById('report-output').value = text;
                 if (category === AssessmentCategory.EARTHQUAKE) {
                     suggestUnnamedFaultPlaces(tabs[0].id, assessment.earthquake.active_fault);
                 }
+                rememberReportForRecommendations(tabs[0].id, {
+                    requestId: (meta && meta.requestId) || '',
+                    category: catStr,
+                    volcano: category === AssessmentCategory.VOLCANO ? volcanoName(assessment.volcano.nearest_active_volcano) : '',
+                    statements: reportStatements(harOutput),
+                });
 
             } catch (e) {
                 document.getElementById('report-output').value = "Error: " + e.message +
@@ -635,4 +644,162 @@ function suggestUnnamedFaultPlaces(tabId, status) {
             `<ul>${list}</ul>From HAS Admin's PSA Municipality layer. Check it against the map before using it.`,
             suggested);
     });
+}
+
+// --- HAS Admin recommendations ---
+// Generating a report stores its statements under the assessment ID from the
+// request page's speech-bubble link (one per category row). On that
+// assessment's recommendation page (Assessment/updateRemarks&id=N) the panel
+// then offers to tick the library rows the assessment still needs. It never
+// clicks Add, Delete or the Order dropdowns (src/lib/recommendations.js,
+// map-handlers.js).
+const REC_KEY = id => `recReport:${id}`;
+let _recReport = null;
+let _recOpenUrl = null;
+
+function assessmentIdOfPage(url) {
+    try {
+        const u = new URL(url);
+        // Only real HAS Admin pages: this URL is also what "Open recommendations page" navigates to.
+        if (u.protocol !== 'https:' && u.protocol !== 'file:') return null;
+        return u.searchParams.get('r') === 'Assessment/updateRemarks' ? u.searchParams.get('id') : null;
+    } catch {
+        return null;
+    }
+}
+
+function runInPage(tabId, func, args) {
+    return new Promise(resolve => chrome.scripting.executeScript({ target: { tabId }, world: 'MAIN', func, args },
+        results => resolve(!chrome.runtime.lastError && results && results[0] ? results[0].result : null)));
+}
+
+function _hideRecommendationsCard() {
+    _recReport = null;
+    _recOpenUrl = null;
+    document.getElementById('rec-card').style.display = 'none';
+    _showRecResult('');
+}
+
+function _showRecommendationsCard({ hint, openUrl = null, report = null }) {
+    _recOpenUrl = openUrl;
+    _recReport = report;
+    document.getElementById('rec-card').style.display = '';
+    document.getElementById('rec-hint').textContent = hint;
+    document.getElementById('btn-open-recs').style.display = openUrl ? '' : 'none';
+    document.getElementById('btn-select-recs').style.display = report ? '' : 'none';
+}
+
+function _showRecResult(html) {
+    const el = document.getElementById('rec-result');
+    el.innerHTML = html;
+    el.style.display = html ? '' : 'none';
+}
+
+function rememberReportForRecommendations(tabId, report) {
+    chrome.tabs.sendMessage(tabId, { action: 'GET_REMARKS_LINKS' }, (links) => {
+        if (chrome.runtime.lastError || !Array.isArray(links)) return;
+        const link = links.find(l => l.category.toLowerCase() === report.category.toLowerCase());
+        if (!link || assessmentIdOfPage(link.url) !== link.assessmentId) return;
+        chrome.storage.session.set({ [REC_KEY(link.assessmentId)]: { ...report, assessmentId: link.assessmentId, savedAt: Date.now() } });
+        _showRecommendationsCard({
+            hint: `PHAST can tick this report's ${report.category} statements on HAS Admin's recommendation page for assessment ${link.assessmentId}.`,
+            openUrl: link.url,
+        });
+    });
+}
+
+function showRecommendationsCard(tab, seq) {
+    const id = assessmentIdOfPage(tab.url || '');
+    if (!id) return;
+    chrome.storage.session.get([REC_KEY(id)], (stored) => {
+        if (seq !== _scanSeq) return;
+        const report = stored[REC_KEY(id)];
+        if (!report) {
+            _showRecommendationsCard({ hint: `No PHAST report for assessment ${id} yet. Generate the report on its request page, then come back here.` });
+            return;
+        }
+        const time = new Date(report.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        _showRecommendationsCard({
+            hint: `Report for request ${report.requestId || '?'} (${report.category}), generated at ${time}. PHAST ticks the statements this assessment doesn't have yet; you check them and click Add Recommendation.`,
+            report,
+        });
+        // The Select button lives in the Report tab; bring it forward on this page.
+        document.querySelector('.tab-btn[data-tab="report"]').click();
+    });
+}
+
+async function selectRecommendations() {
+    const report = _recReport;
+    const tabId = _shownTabId;
+    if (!report || tabId === null) return;
+    const seq = _scanSeq;
+    const btn = document.getElementById('btn-select-recs');
+    btn.disabled = true;
+    _showRecResult('Reading HAS Admin\'s recommendation library...');
+    try {
+        const lib = await runInPage(tabId, (category) => window.PHAST && window.PHAST.recommendationLibrary
+            ? window.PHAST.recommendationLibrary(category)
+            : { ok: false, reason: 'PHAST\'s page tools aren\'t loaded on this page yet.' }, [report.category]);
+        if (seq !== _scanSeq) return;
+        if (!lib || !lib.ok) {
+            _showRecResult(`Couldn't read the library: ${_escHtml(lib ? lib.reason : 'no answer from the page')}`);
+            return;
+        }
+        if (lib.assessmentId !== report.assessmentId) {
+            _showRecResult('This page is for a different assessment than the report. Nothing was ticked.');
+            return;
+        }
+
+        const plan = planSelection(report.statements, lib.library, lib.selected, report);
+        const pageOf = id => (lib.library.find(r => r.id === id) || {}).page;
+        const byPage = new Map();
+        for (const t of plan.toTick) byPage.set(pageOf(t.id), [...(byPage.get(pageOf(t.id)) || []), t.id]);
+        const [page, ids] = [...byPage].sort((a, b) => b[1].length - a[1].length)[0] || [null, []];
+
+        let tickedIds = [];
+        if (ids.length) {
+            const res = await runInPage(tabId, (c, p, i) => window.PHAST.tickRecommendations(c, p, i), [report.category, page, ids]);
+            if (seq !== _scanSeq) return;
+            if (!res || !res.ok) {
+                _showRecResult(`Couldn't tick the rows: ${_escHtml(res ? res.reason : 'no answer from the page')}`);
+                return;
+            }
+            tickedIds = res.ticked;
+        }
+        _showRecResult(renderRecommendationPlan(plan, tickedIds, page, report.category));
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+function renderRecommendationPlan(plan, tickedIds, page, category) {
+    const li = items => `<ul>${items.map(t => `<li>${_escHtml(t)}</li>`).join('')}</ul>`;
+    const short = s => s.length > 110 ? s.slice(0, 107) + '...' : s;
+    const parts = [];
+    const ticked = plan.toTick.filter(t => tickedIds.includes(t.id));
+    const later = plan.toTick.filter(t => !tickedIds.includes(t.id));
+    if (ticked.length) {
+        parts.push(`<strong>Ticked ${ticked.length} row(s) on page ${page} of the ${_escHtml(category)} list.</strong> Check them, then click Add Recommendation.` +
+            li(ticked.map(t => short(t.text))));
+    }
+    if (later.length) {
+        parts.push(`${later.length} more are on another page of the library. After adding these, press Select recommendations again.`);
+    }
+    if (!plan.toTick.length && !plan.near.length && !plan.missing.length) {
+        parts.push('The assessment already has every statement in the report.');
+    } else if (plan.present.length) {
+        parts.push(`${plan.present.length} statement(s) are already on the assessment.`);
+    }
+    if (plan.near.length) {
+        parts.push('<strong>Close, but the library words it differently (not ticked):</strong>' +
+            li(plan.near.map(n => `Report: "${short(n.statement)}" / Library: "${short(n.libraryText)}"`)));
+    }
+    if (plan.missing.length) {
+        parts.push('<strong>Not in HAS Admin\'s library:</strong>' + li(plan.missing.map(m => short(m.statement))));
+    }
+    if (plan.extra.length) {
+        parts.push('<strong>On the assessment but not in PHAST\'s report</strong> (delete them yourself if they don\'t belong):' +
+            li(plan.extra.map(e => short(e.text))));
+    }
+    return parts.map(p => `<p>${p}</p>`).join('');
 }

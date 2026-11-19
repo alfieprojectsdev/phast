@@ -1275,6 +1275,100 @@ window.PHAST.unnamedFaultData = async function () {
     }
 };
 
+// --- RECOMMENDATION LIBRARY (the speech-bubble page, Assessment/updateRemarks) ---
+// HAS Admin lists its recommendation library in the grid #item-grid2 (100
+// rows a page) and the assessment's chosen statements in #rec-grid-tmp.
+// "Add Recommendation" posts only the ticked rows on the page on screen, so
+// PHAST reads every page to plan, then shows and ticks one page at a time.
+// It never clicks Add, Delete or the Order dropdowns: Add asks for
+// confirmation, and an Order change saves at once.
+const REC_GRID = 'item-grid2';
+const REC_CATEGORY_FILTER = 'RefExplanationRecommendation[category]';
+const REC_PAGE_PARAM = 'RefExplanationRecommendation_page';
+
+// The category filter takes option values ("1", "2"), not names, so read
+// them from the filter itself.
+function categoryFilterValue(category) {
+    const select = document.querySelector('select[name="' + REC_CATEGORY_FILTER + '"]');
+    const option = select && Array.from(select.options).find(o => o.text.trim().toLowerCase() === String(category).toLowerCase());
+    return option ? option.value : null;
+}
+
+function recommendationPageUrl(filterValue, page, ajax) {
+    const u = new URL(location.href);
+    u.searchParams.set(REC_CATEGORY_FILTER, filterValue);
+    u.searchParams.set(REC_PAGE_PARAM, String(page));
+    if (ajax) u.searchParams.set('ajax', REC_GRID);
+    return u.toString();
+}
+
+function readLibraryRows(root, page) {
+    return Array.from(root.querySelectorAll('#' + REC_GRID + ' tbody tr')).map(tr => {
+        const cb = tr.querySelector('input[type=checkbox]');
+        if (!cb || tr.cells.length < 5) return null;
+        const cell = i => tr.cells[i].innerText.replace(/\s+/g, ' ').trim();
+        return { id: cb.value, category: cell(1), volcano: cell(2), text: cell(4), page };
+    }).filter(Boolean);
+}
+
+window.PHAST.recommendationLibrary = async function (category) {
+    const fail = reason => ({ ok: false, reason });
+    const params = new URLSearchParams(location.search);
+    if (params.get('r') !== 'Assessment/updateRemarks' || !document.getElementById(REC_GRID)) {
+        return fail('This isn\'t an assessment\'s recommendation page.');
+    }
+    const filterValue = categoryFilterValue(category);
+    if (!filterValue) return fail('The library has no "' + category + '" category filter.');
+    try {
+        const library = [];
+        for (let page = 1; page <= 20; page++) {
+            const res = await fetch(recommendationPageUrl(filterValue, page, true), {
+                credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
+            const rows = readLibraryRows(doc, page);
+            // Past the last page Yii repeats the last page; stop on the first repeat.
+            if (rows.length === 0 || rows.some(r => library.some(l => l.id === r.id))) break;
+            library.push(...rows);
+            const summary = doc.querySelector('#' + REC_GRID + ' .summary');
+            const total = summary && Number((summary.innerText.match(/of\s+(\d+)/) || [])[1]);
+            if (total && library.length >= total) break;
+        }
+        const selected = Array.from(document.querySelectorAll('#rec-grid-tmp tbody tr'))
+            .filter(tr => tr.querySelector('input[type=checkbox]'))
+            .map(tr => ({ text: tr.cells[tr.cells.length - 1].innerText.replace(/\s+/g, ' ').trim() }));
+        return { ok: true, assessmentId: params.get('id'), library, selected };
+    } catch (e) {
+        return fail('Couldn\'t read the recommendation library: ' + e.message);
+    }
+};
+
+window.PHAST.tickRecommendations = async function (category, page, ids) {
+    const $ = window.jQuery;
+    if (!$ || !$.fn.yiiGridView) return { ok: false, reason: 'The recommendation grid isn\'t ready on this page.' };
+    const filterValue = categoryFilterValue(category);
+    if (!filterValue) return { ok: false, reason: 'The library has no "' + category + '" category filter.' };
+    const before = document.querySelector('#' + REC_GRID + ' tbody');
+    $.fn.yiiGridView.update(REC_GRID, { url: recommendationPageUrl(filterValue, page, false) });
+    const deadline = Date.now() + 15000;
+    while (Date.now() < deadline) {
+        await new Promise(r => setTimeout(r, 200));
+        const grid = document.getElementById(REC_GRID);
+        if (grid && !grid.classList.contains('grid-view-loading') && grid.querySelector('tbody') !== before) break;
+    }
+    const boxes = Array.from(document.querySelectorAll('#' + REC_GRID + ' tbody input[type=checkbox]'));
+    const ticked = [];
+    for (const box of boxes) {
+        if (ids.includes(box.value)) {
+            box.checked = true;
+            box.dispatchEvent(new Event('change', { bubbles: true }));
+            ticked.push(box.value);
+        }
+    }
+    return { ok: true, ticked, notFound: ids.filter(id => !ticked.includes(id)) };
+};
+
 // --- GET DRAWN GEOJSON (for EIL-Viz handoff) ---
 window.PHAST.getDrawnGeoJSON = function () {
     if (typeof drawnItems === 'undefined') return null;

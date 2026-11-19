@@ -42,6 +42,8 @@ These buttons call functions that PHAST injects into the page's own JavaScript c
 
 If a volcano cell can't be read (see [Assessment table columns](#assessment-table-columns)), you get an error instead of a report. When the engine leaves out a status you entered because the rules don't apply that hazard to the nearest volcano, it says so in a box above the report. The box isn't part of the copied text.
 
+When the Active Fault status says "...of the Unnamed Fault", HAS Admin doesn't name the places the fault crosses, but the template wants them ("...of an unnamed fault traversing Mauban, Sampaloc, Tayabas and Pagbilao, Quezon"). After generating an Earthquake report, PHAST looks them up from HAS Admin's own map and shows a suggested status for the assessment table, with a copy button. The fault is the one at the far end of the distance line HAS Admin draws from the parcel, read from the Active Fault layer. The places are the municipalities in the PSA Municipality layer that the fault line crosses, ordered north to south (or west to east for a fault running east-west), with how many kilometres of the fault lie in each; crossings under 1 km are marked for checking on the map. A fault crossing more than one province, or a lookup that fails, gets no suggestion, and you write the list by hand. The lookup takes about 5 seconds, and the suggestion is never added to the report text itself.
+
 The engine copies each hazard status from the table verbatim and adds the matching explanation, recommendation and boilerplate. A status counts as safe only when it contains "safe" and doesn't also say "susceptible" or "prone", so "Partly Safe, Largely Susceptible" is treated as a hazard. The rules it follows are in [docs/LOGIC_GUIDE.md](docs/LOGIC_GUIDE.md), and [Logic engine: doc-to-code mapping](#logic-engine-doc-to-code-mapping) records where the engine does and doesn't implement them.
 
 ### Row clicks
@@ -153,6 +155,7 @@ There's no build step and no `package.json`. Load the folder unpacked, edit, and
 | `src/inject/map-handlers.js` | Page, main world | `window.PHAST.*`: overlay, KML import, ULAP, coordinates, GeoJSON export |
 | `src/lib/filename-generator.js` | Popup | Filename rules |
 | `src/lib/eil-handoff.js` | Popup | The link "Send to EIL-Viz" opens |
+| `src/lib/fault-lgus.js` | Popup | Orders and formats the municipalities an unnamed fault traverses; `map-handlers.js` (`window.PHAST.unnamedFaultData`) fetches the fault and the municipalities from HAS Admin's map |
 | `src/lib/panel-tab.js` | Popup | When the side panel clears and rescans after a tab change |
 | `src/lib/har-engine/` | Popup | `rules.js` (text and thresholds), `models.js`, `engine.js` (decision logic), `table-row.js` (assessment table row to `Assessment`) |
 | `src/background/service-worker.js` | Background | Makes the toolbar icon open the side panel where the browser has one; a `PING` responder |
@@ -164,7 +167,7 @@ There's no build step and no `package.json`. Load the folder unpacked, edit, and
 node --test
 ```
 
-121 tests in `tests/*.test.mjs`: the HAR engine, the table-row mapping in `table-row.js`, the shape of `rules.js`, the EIL-Viz handoff link in `eil-handoff.js`, the side panel's rescan rules in `panel-tab.js`, and the overlay crop helpers in `map-handlers.js` (`window.PHAST.crop`). The crop tests load `map-handlers.js` in a Node vm and read the operator codes from the vendored PDF.js. Nothing tests the side panel page itself, the scraper or the map handlers' DOM and Leaflet code. Tested on Node 24.19.
+138 tests in `tests/*.test.mjs`: the HAR engine, the table-row mapping in `table-row.js`, the shape of `rules.js`, the EIL-Viz handoff link in `eil-handoff.js`, the side panel's rescan rules in `panel-tab.js`, the unnamed-fault place list in `fault-lgus.js` (on made-up squares; no real boundary or fault data is in the repository), and the overlay crop helpers in `map-handlers.js` (`window.PHAST.crop`). The crop tests load `map-handlers.js` in a Node vm and read the operator codes from the vendored PDF.js. Nothing tests the side panel page itself, the scraper or the map handlers' DOM and Leaflet code. Tested on Node 24.19.
 
 `tests/mock-page.html` is a stand-in HAS Admin page with a Leaflet map and three attachments, for trying the map tools: a synthetic vicinity map (`tests/fixtures/vicinity-map.png`), the same map pasted into a Word-style A4 page with margins and a caption (`tests/fixtures/vicinity-map-word.pdf`), and a KML. The fixtures are generated, not real places. Fetching attachments doesn't work from `file://`, so serve the repository root over HTTP (for example `python -m http.server 8765`) and open `http://localhost:8765/tests/mock-page.html`. With the extension installed, its content scripts run there only if the address is added to the manifest; without it, the page's "Load map handlers" button loads `src/inject/map-handlers.js` directly. The page loads Leaflet from unpkg, so it needs internet access. Its table doesn't have the column layout the Report tab reads.
 

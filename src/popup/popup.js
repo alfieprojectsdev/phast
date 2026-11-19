@@ -8,6 +8,7 @@ import { AssessmentCategory } from '../lib/har-engine/models.js';
 import { assessmentFromRow, findCategoryRow, COLUMNS } from '../lib/har-engine/table-row.js';
 import { eilVizUrl } from '../lib/eil-handoff.js';
 import { panelAction } from '../lib/panel-tab.js';
+import { indexMunicipalities, municipalitiesAlong, formatTraversed, mentionsUnnamedFault, unnamedFaultStatus } from '../lib/fault-lgus.js';
 
 let _currentMetadata = null;
 let _currentFilenames = [];
@@ -20,6 +21,10 @@ let _panelWindowId = null;
 // Bumped by every scan and reset, so a reply from a page the assessor has
 // since left can't overwrite what's on screen.
 let _scanSeq = 0;
+// Bumped by every report and reset, so an unnamed-fault lookup that finishes
+// late can't show its suggestion beside a different report.
+let _faultLookup = 0;
+const SHORT_CROSSING_M = 1000;
 
 // Where the EIL stack is served. eil-calc and eil-viz sit behind one origin:
 // `/` is the eil-viz bundle, `/api/` proxies to eil-calc.
@@ -153,6 +158,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Copy Report Listener
+    document.getElementById('btn-copy-suggestion').addEventListener('click', () => {
+        const btn = document.getElementById('btn-copy-suggestion');
+        navigator.clipboard.writeText(btn.dataset.text || '').then(() => {
+            btn.textContent = 'Copied!';
+            setTimeout(() => btn.textContent = 'Copy suggested status', 1500);
+        }).catch(err => console.error('Failed to copy suggestion:', err));
+    });
+
     document.getElementById('btn-copy-report').addEventListener('click', () => {
         const reportText = document.getElementById('report-output').value;
         if (!reportText || reportText.startsWith('Error:')) return;
@@ -205,6 +218,7 @@ function resetView() {
     document.getElementById('discovery-card').style.display = 'none';
     document.getElementById('report-output').value = '';
     _showReportWarnings([]);
+    _clearFaultSuggestion();
     _setEILStatus(document.getElementById('eil-status'), '', '');
 }
 
@@ -485,6 +499,7 @@ function generateReport() {
         const siteLocation = (!chrome.runtime.lastError && meta && meta.location) || '';
         chrome.tabs.sendMessage(tabs[0].id, { action: 'GET_TABLE_DATA' }, (rows) => {
             _showReportWarnings([]);
+            _clearFaultSuggestion();
             if (!rows || rows.length === 0) {
                 document.getElementById('report-output').value = "Error: No assessment table data found on page.";
                 return;
@@ -547,6 +562,9 @@ function generateReport() {
                 }
 
                 document.getElementById('report-output').value = text;
+                if (category === AssessmentCategory.EARTHQUAKE) {
+                    suggestUnnamedFaultPlaces(tabs[0].id, assessment.earthquake.active_fault);
+                }
 
             } catch (e) {
                 document.getElementById('report-output').value = "Error: " + e.message +
@@ -555,5 +573,66 @@ function generateReport() {
             }
         });
         });
+    });
+}
+
+// HAS Admin writes "...of the Unnamed Fault"; the template lists the
+// municipalities the fault traverses (src/lib/fault-lgus.js). The page reads
+// the fault and the PSA municipalities from HAS Admin's map; this orders and
+// formats them. Shown beside the report as a suggestion, never inside it.
+
+function _clearFaultSuggestion() {
+    _faultLookup++;
+    _showFaultSuggestion('', null);
+}
+
+function _showFaultSuggestion(html, copyText) {
+    const box = document.getElementById('report-suggestion');
+    const btn = document.getElementById('btn-copy-suggestion');
+    document.getElementById('report-suggestion-text').innerHTML = html;
+    box.style.display = html ? '' : 'none';
+    btn.style.display = copyText ? '' : 'none';
+    btn.dataset.text = copyText || '';
+}
+
+function suggestUnnamedFaultPlaces(tabId, status) {
+    if (!mentionsUnnamedFault(status)) return;
+    const lookup = ++_faultLookup;
+    _showFaultSuggestion('Looking up the municipalities the unnamed fault traverses...', null);
+
+    chrome.scripting.executeScript({
+        target: { tabId },
+        world: 'MAIN',
+        func: () => window.PHAST && window.PHAST.unnamedFaultData
+            ? window.PHAST.unnamedFaultData()
+            : { ok: false, reason: 'PHAST\'s map tools aren\'t loaded on this page yet.' },
+    }, (results) => {
+        const failed = chrome.runtime.lastError;
+        if (lookup !== _faultLookup) return;
+        const data = !failed && results && results[0] && results[0].result;
+        if (!data || !data.ok) {
+            _showFaultSuggestion(`Couldn't list the municipalities the unnamed fault traverses: ${_escHtml(data ? data.reason : 'no answer from the page')} Write them by hand.`, null);
+            return;
+        }
+
+        const places = municipalitiesAlong(data.line, indexMunicipalities(data.municipalities));
+        if (places.length === 0) {
+            _showFaultSuggestion('No PSA municipality lies along the unnamed fault (it may be offshore). Write the location by hand.', null);
+            return;
+        }
+        const list = places.map(p =>
+            `<li>${_escHtml(p.name)}, ${_escHtml(p.province)}: ${(p.metres / 1000).toFixed(1)} km of the fault` +
+            (p.metres < SHORT_CROSSING_M ? ' <strong>(short crossing; check it on the map)</strong>' : '') + '</li>').join('');
+        const traversed = formatTraversed(places);
+        if (!traversed) {
+            _showFaultSuggestion(`The unnamed fault crosses more than one province, so write the list by hand:<ul>${list}</ul>`, null);
+            return;
+        }
+        const suggested = unnamedFaultStatus(status, traversed);
+        _showFaultSuggestion(
+            'Suggested Active Fault status for the assessment table, listing the municipalities the unnamed fault traverses (north to south, or west to east):' +
+            `<div class="suggested-status">${_escHtml(suggested)}</div>` +
+            `<ul>${list}</ul>From HAS Admin's PSA Municipality layer. Check it against the map before using it.`,
+            suggested);
     });
 }

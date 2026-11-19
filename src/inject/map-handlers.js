@@ -1226,7 +1226,7 @@ window.PHAST.unnamedFaultData = async function () {
     if (!faults) return fail('The Active Fault layer isn\'t on the map.');
     // HAS Admin draws it only when it measured a distance: a site transected by
     // the fault, or a page where the assessment hasn't run, has none.
-    if (!distanceLine) return fail('HAS Admin\'s distance line to the nearest fault isn\'t on the map, so PHAST can\'t tell which fault was measured. If the site is transected by the fault, find the line on the map.');
+    if (!distanceLine) return fail('HAS Admin\'s distance line to the nearest fault isn\'t on the map, so PHAST can\'t tell which fault was measured. For a site the fault transects, trace the fault through the PSA Municipality layer.');
 
     const run = query => new Promise((resolve, reject) =>
         query.run((err, fc) => err ? reject(new Error(err.message || String(err.code))) : resolve(fc)));

@@ -9,7 +9,7 @@ import { assessmentFromRow, findCategoryRow, COLUMNS } from '../lib/har-engine/t
 import { eilVizUrl } from '../lib/eil-handoff.js';
 import { panelAction } from '../lib/panel-tab.js';
 import { indexMunicipalities, municipalitiesAlong, formatTraversed, mentionsUnnamedFault, unnamedFaultStatus } from '../lib/fault-lgus.js';
-import { reportStatements, planSelection, volcanoName, suggestOrder } from '../lib/recommendations.js';
+import { reportStatements, planSelection, suggestOrder } from '../lib/recommendations.js';
 
 let _currentMetadata = null;
 let _currentFilenames = [];
@@ -568,10 +568,15 @@ function generateReport() {
                 if (category === AssessmentCategory.EARTHQUAKE) {
                     suggestUnnamedFaultPlaces(tabs[0].id, assessment.earthquake.active_fault);
                 }
+                // Volcano names as the engine read them, so they match the report's
+                // text; the library writes them as {{AV}} and {{PAV}}.
+                const nameIn = cell => (category === AssessmentCategory.VOLCANO && cell && cell !== '--'
+                    && engine._parseVolcanoText(cell)?.name) || '';
                 rememberReportForRecommendations(tabs[0].id, {
                     requestId: (meta && meta.requestId) || '',
                     category: catStr,
-                    volcano: category === AssessmentCategory.VOLCANO ? volcanoName(assessment.volcano.nearest_active_volcano) : '',
+                    volcano: nameIn(assessment.volcano && assessment.volcano.nearest_active_volcano),
+                    pav: nameIn(assessment.volcano && assessment.volcano.nearest_pav),
                     statements: reportStatements(harOutput),
                 });
 
@@ -767,7 +772,7 @@ async function selectRecommendations() {
             tickedIds = res.ticked;
         }
         _showRecResult(renderRecommendationPlan(plan, tickedIds, page, report.category) +
-            renderSuggestedOrder(suggestOrder(report.statements, lib.selected)));
+            renderSuggestedOrder(suggestOrder(report.statements, lib.selected, report)));
     } finally {
         btn.disabled = false;
     }

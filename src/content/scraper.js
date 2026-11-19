@@ -13,6 +13,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         sendResponse(tableData);
     } else if (request.action === 'SCAN_COORDS') {
         sendResponse(scanCoords());
+    } else if (request.action === 'GET_REMARKS_LINKS') {
+        sendResponse(extractRemarksLinks());
     }
 });
 
@@ -112,6 +114,20 @@ function extractTableData() {
     return Array.from(table.querySelectorAll('tbody tr')).map(tr =>
         Array.from(tr.querySelectorAll('td')).map(td => td.innerText.trim())
     );
+}
+
+// Each assessment row's speech-bubble icon links to that assessment's
+// recommendation page (Assessment/updateRemarks&id=N). Returned per category so
+// the side panel can tick recommendations only on the assessment the report
+// was generated for.
+function extractRemarksLinks() {
+    const table = document.querySelector('#assessment-grid table.items');
+    if (!table) return [];
+    return Array.from(table.querySelectorAll('tbody tr')).map(tr => {
+        const link = Array.from(tr.querySelectorAll('a')).find(a => /r=Assessment\/updateRemarks\b/.test(a.getAttribute('href') || ''));
+        const id = link && (link.getAttribute('href').match(/[?&]id=(\d+)/) || [])[1];
+        return id ? { category: (tr.cells[1] ? tr.cells[1].innerText.trim() : ''), assessmentId: id, url: link.href } : null;
+    }).filter(Boolean);
 }
 
 function scanCoords() {

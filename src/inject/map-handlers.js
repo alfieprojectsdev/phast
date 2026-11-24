@@ -1372,12 +1372,89 @@ window.PHAST.tickRecommendations = async function (category, page, ids) {
     return { ok: true, ticked, notFound: ids.filter(id => !ticked.includes(id)) };
 };
 
-// --- GET DRAWN GEOJSON (for EIL-Viz handoff) ---
-window.PHAST.getDrawnGeoJSON = function () {
-    if (typeof drawnItems === 'undefined') return null;
-    const geojson = drawnItems.toGeoJSON();
-    if (!geojson.features || geojson.features.length === 0) return null;
-    return JSON.stringify(geojson);
+// --- PARCELS FOR EIL-VIZ ---
+// EIL-Viz assesses one polygon. A request can carry several lots (several
+// KML/KMZ placemarks or hand-drawn shapes), so the panel lists the drawn
+// polygons and, when there's more than one, asks which to send, the way
+// "Overlay Vicinity Map" asks which attachment to use.
+window.PHAST.drawnParcels = function () {
+    if (typeof drawnItems === 'undefined') return [];
+    const parcels = [];
+    drawnItems.eachLayer(layer => {
+        if (!layer.toGeoJSON) return;
+        const feature = layer.toGeoJSON();
+        if (!feature.geometry || feature.geometry.type !== 'Polygon') return;
+        const props = feature.properties || {};
+        const label = [props.name, props._sourceFile].filter(Boolean).join(' (') + (props.name && props._sourceFile ? ')' : '');
+        parcels.push({
+            id: L.stamp(layer),
+            label: label || `Drawn polygon ${parcels.length + 1}`,
+            corners: feature.geometry.coordinates[0].length - 1,
+            geojson: JSON.stringify({ type: 'FeatureCollection', features: [feature] }),
+        });
+    });
+    return parcels;
+};
+
+// Shows the choice over the map. Opening EIL-Viz happens here, on the
+// assessor's click in the page, so it works even if the popup closed when
+// the page got focus. Hovering an option highlights that polygon.
+window.PHAST.chooseParcelForEIL = function (options) {
+    const esc = s => String(s).replace(/[&<>"']/g, c =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const layerOf = id => drawnItems.getLayers().find(l => L.stamp(l) === id);
+    const highlight = (id, on) => {
+        const layer = layerOf(id);
+        if (!layer || !layer.setStyle) return;
+        if (on) {
+            layer._phastStyle = layer._phastStyle || { color: layer.options.color, weight: layer.options.weight };
+            layer.setStyle({ color: '#f1c40f', weight: 6 });
+            if (layer.bringToFront) layer.bringToFront();
+        } else if (layer._phastStyle) {
+            layer.setStyle(layer._phastStyle);
+            delete layer._phastStyle;
+        }
+    };
+
+    const old = document.getElementById('phast-eil-modal');
+    if (old) old.remove();
+    const modal = document.createElement('div');
+    modal.id = 'phast-eil-modal';
+    modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.35);z-index:11000;display:flex;justify-content:flex-end;align-items:flex-start;font-family:sans-serif;';
+    modal.innerHTML = `
+        <div style="background:white;margin:20px;padding:16px;border-radius:8px;width:360px;max-height:80%;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,0.2);">
+            <h3 style="margin-top:0;">Send which parcel to EIL-Viz?</h3>
+            <p style="font-size:13px;color:#555;">EIL-Viz assesses one polygon at a time. Hover an option to see it on the map.</p>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+                ${options.map((o, i) => `
+                    <button class="phast-eil-option" data-idx="${i}" style="padding:9px;text-align:left;border:1px solid #ddd;border-radius:4px;background:#f9f9f9;cursor:pointer;">
+                        <strong>${esc(o.label)}</strong><br>
+                        <small style="color:#666;">${esc(o.corners)} corners</small>
+                    </button>`).join('')}
+            </div>
+            <button id="phast-eil-cancel" style="margin-top:12px;width:100%;padding:8px;">Cancel</button>
+        </div>`;
+    document.body.appendChild(modal);
+
+    return new Promise(resolve => {
+        const close = chosen => {
+            options.forEach(o => highlight(o.id, false));
+            modal.remove();
+            resolve(chosen);
+        };
+        modal.querySelectorAll('.phast-eil-option').forEach(btn => {
+            const opt = options[Number(btn.dataset.idx)];
+            btn.addEventListener('mouseenter', () => highlight(opt.id, true));
+            btn.addEventListener('mouseleave', () => highlight(opt.id, false));
+            btn.addEventListener('focus', () => highlight(opt.id, true));
+            btn.addEventListener('blur', () => highlight(opt.id, false));
+            btn.addEventListener('click', () => {
+                window.open(opt.url, '_blank');
+                close(opt.id);
+            });
+        });
+        modal.querySelector('#phast-eil-cancel').addEventListener('click', () => close(null));
+    });
 };
 
 // --- CENTER MAP TO COORDINATES ---

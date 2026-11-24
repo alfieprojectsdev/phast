@@ -384,28 +384,21 @@ async function sendToEILViz() {
     const btn = document.getElementById('btn-send-eil');
     const statusEl = document.getElementById('eil-status');
 
-    // Step 1: get drawn GeoJSON from the map page
+    // Step 1: the drawn or imported parcel polygons on the map page
     const tabs = await new Promise(resolve =>
         chrome.tabs.query({ active: true, currentWindow: true }, resolve)
     );
     if (!tabs[0]) return;
+    const tabId = tabs[0].id;
 
-    const results = await new Promise(resolve =>
-        chrome.scripting.executeScript({
-            target: { tabId: tabs[0].id },
-            world: 'MAIN',
-            func: () => window.PHAST && window.PHAST.getDrawnGeoJSON
-                ? window.PHAST.getDrawnGeoJSON()
-                : null
-        }, resolve)
-    );
+    const parcels = await runInPage(tabId, () => window.PHAST && window.PHAST.drawnParcels
+        ? window.PHAST.drawnParcels()
+        : null, []);
 
-    if (chrome.runtime.lastError || !results || !results[0] || !results[0].result) {
+    if (!parcels || parcels.length === 0) {
         alert('PHAST: No drawn polygon found on the map. Draw or import a parcel boundary first.');
         return;
     }
-
-    const geoJson = results[0].result;
 
     // Step 2: one readiness check. eil-calc and eil-viz share an origin now, so
     // a single probe covers both — and /readyz answers the question that
@@ -432,7 +425,16 @@ async function sendToEILViz() {
     if (health.ready) {
         _setEILStatus(statusEl, '', '');
         // Always a new tab: EIL-Viz reads the parcel only when the page loads.
-        window.open(eilVizUrl(base, geoJson), '_blank');
+        if (parcels.length === 1) {
+            window.open(eilVizUrl(base, parcels[0].geojson), '_blank');
+            return;
+        }
+        // Several lots: the page asks which one, over the map, and opens it.
+        _setEILStatus(statusEl, 'checking', `${parcels.length} parcels on the map: choose one on the page.`);
+        const options = parcels.map(p => ({ id: p.id, label: p.label, corners: p.corners, url: eilVizUrl(base, p.geojson) }));
+        const chosen = await runInPage(tabId, (opts) => window.PHAST.chooseParcelForEIL(opts), [options]);
+        _setEILStatus(statusEl, '', '');
+        if (chosen === null) _setEILStatus(statusEl, 'checking', 'Cancelled; nothing was sent.');
         return;
     }
 

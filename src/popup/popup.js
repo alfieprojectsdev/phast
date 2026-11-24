@@ -432,9 +432,10 @@ async function sendToEILViz() {
         // Several lots: the page asks which one, over the map, and opens it.
         _setEILStatus(statusEl, 'checking', `${parcels.length} parcels on the map: choose one on the page.`);
         const options = parcels.map(p => ({ id: p.id, label: p.label, corners: p.corners, url: eilVizUrl(base, p.geojson) }));
-        const chosen = await runInPage(tabId, (opts) => window.PHAST.chooseParcelForEIL(opts), [options]);
-        _setEILStatus(statusEl, '', '');
-        if (chosen === null) _setEILStatus(statusEl, 'checking', 'Cancelled; nothing was sent.');
+        const result = await runInPage(tabId, (opts) => window.PHAST.chooseParcelForEIL(opts), [options]);
+        if (result && result.chosen !== undefined) _setEILStatus(statusEl, '', '');
+        else if (result && result.cancelled) _setEILStatus(statusEl, 'checking', 'Cancelled; nothing was sent.');
+        else _setEILStatus(statusEl, 'checking', 'The page stopped answering (reloaded or left?); nothing was sent.');
         return;
     }
 

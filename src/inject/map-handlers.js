@@ -966,7 +966,61 @@ window.PHAST.overlayVicinityMap = function () {
     }
 };
 
-// --- KML IMPORT LOGIC ---
+// --- CHOICE DIALOG ---
+// A list over the map for picking one of several things: a KML/KMZ to import,
+// a parcel to send to EIL-Viz. Resolves to { index }, { all: true } (when an
+// "all" button is offered) or null when dismissed with Cancel, Escape or a
+// click outside. onHover(index, on) lets the caller highlight an option.
+function phastChoice({ title, intro, options, allLabel = null, onHover = null }) {
+    const esc = s => String(s).replace(/[&<>"']/g, c =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const old = document.getElementById('phast-choice-modal');
+    if (old) old.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'phast-choice-modal';
+    modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.35);z-index:11000;display:flex;justify-content:flex-end;align-items:flex-start;font-family:sans-serif;';
+    modal.innerHTML = `
+        <div class="phast-choice-box" style="background:white;margin:20px;padding:16px;border-radius:8px;width:360px;max-height:80%;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,0.2);">
+            <h3 style="margin-top:0;">${esc(title)}</h3>
+            <p style="font-size:13px;color:#555;">${esc(intro)}</p>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+                ${options.map((o, i) => `
+                    <button class="phast-choice-option" data-idx="${i}" style="padding:9px;text-align:left;border:1px solid #ddd;border-radius:4px;background:#f9f9f9;cursor:pointer;">
+                        <strong>${esc(o.label)}</strong>${o.detail ? `<br><small style="color:#666;">${esc(o.detail)}</small>` : ''}
+                    </button>`).join('')}
+            </div>
+            ${allLabel ? `<button class="phast-choice-all" style="margin-top:12px;width:100%;padding:8px;">${esc(allLabel)}</button>` : ''}
+            <button class="phast-choice-cancel" style="margin-top:8px;width:100%;padding:8px;">Cancel</button>
+        </div>`;
+    document.body.appendChild(modal);
+
+    return new Promise(resolve => {
+        const close = result => {
+            if (onHover) options.forEach((o, i) => onHover(i, false));
+            document.removeEventListener('keydown', onKey, true);
+            modal.remove();
+            resolve(result);
+        };
+        const onKey = e => { if (e.key === 'Escape') { e.stopPropagation(); close(null); } };
+        document.addEventListener('keydown', onKey, true);
+        modal.addEventListener('click', e => { if (e.target === modal) close(null); });
+        modal.querySelectorAll('.phast-choice-option').forEach(btn => {
+            const i = Number(btn.dataset.idx);
+            if (onHover) {
+                btn.addEventListener('mouseenter', () => onHover(i, true));
+                btn.addEventListener('mouseleave', () => onHover(i, false));
+                btn.addEventListener('focus', () => onHover(i, true));
+                btn.addEventListener('blur', () => onHover(i, false));
+            }
+            btn.addEventListener('click', () => close({ index: i }));
+        });
+        const all = modal.querySelector('.phast-choice-all');
+        if (all) all.addEventListener('click', () => close({ all: true }));
+        modal.querySelector('.phast-choice-cancel').addEventListener('click', () => close(null));
+    });
+}
+
 // --- KML IMPORT LOGIC ---
 window.PHAST.importKML = function () {
     console.log('PHAST: Importing KML...');
@@ -979,14 +1033,19 @@ window.PHAST.importKML = function () {
     let links = document.querySelectorAll('span.text-primary');
 
     for (let span of links) {
-        let name = span.innerText.trim().toLowerCase();
+        let display = span.innerText.trim();
+        let name = display.toLowerCase();
         if (name.endsWith('.kmz') || name.endsWith('.kml')) {
             let row = span.closest('tr');
             if (!row) continue;
             let dl = row.querySelector("a[href*='download'], a[download]");
             if (dl) {
-                let url = dl.href.startsWith('http') ? dl.href : location.origin + dl.getAttribute('href');
-                files.push({ url: url, name: name });
+                // dl.href is already absolute; the old origin-prefix fallback broke data: and blob: links.
+                let url = dl.href;
+                // The same file can appear in more than one span of a row.
+                if (files.some(f => f.url === url)) continue;
+                let date = row.cells && row.cells.length > 3 ? row.cells[3].innerText.trim() : '';
+                files.push({ url: url, name: name, display: display, date: date });
             }
         }
     }
@@ -1132,56 +1191,73 @@ window.PHAST.importKML = function () {
         return res.text();
     }
 
-    // Fetch and process all files
-    let names = files.map(f => f.name).join(', ');
-    console.log('⏳ Fetching ' + files.length + ' file(s): ' + names);
+    // Several attachments: ask which to plot, the way Overlay Vicinity Map
+    // asks which image to use, rather than putting every file on the map.
+    if (files.length === 1) {
+        importFiles(files);
+    } else {
+        phastChoice({
+            title: 'Import which KML/KMZ?',
+            intro: 'This request has ' + files.length + ' KML/KMZ attachments. Pick one to put on the map.',
+            options: files.map(f => ({ label: f.display, detail: f.date ? 'Uploaded: ' + f.date : '' })),
+            allLabel: 'Import all files',
+        }).then(choice => {
+            if (!choice) return;
+            importFiles(choice.all ? files : [files[choice.index]]);
+        });
+    }
 
-    let allFeatures = [];
-    let errors = [];
+    function importFiles(files) {
+        let names = files.map(f => f.name).join(', ');
+        console.log('⏳ Fetching ' + files.length + ' file(s): ' + names);
 
-    Promise.all(files.map(file =>
-        fetch(file.url)
-            .then(res => {
-                if (!res.ok) throw new Error(file.name + ': HTTP ' + res.status);
-                return extractKml(res, file.name);
-            })
-            .then(kmlText => {
-                let geojson = kmlToGeoJSON(kmlText);
-                // Tag each feature with its source file
-                geojson.features.forEach(f => f.properties._sourceFile = file.name);
-                allFeatures.push(...geojson.features);
-            })
-            .catch(err => errors.push(file.name + ': ' + err.message))
-    )).then(() => {
-        if (allFeatures.length === 0) {
-            alert('⚠️ No geometry found.' + (errors.length ? '\n\nErrors:\n' + errors.join('\n') : ''));
-            return;
-        }
+        let allFeatures = [];
+        let errors = [];
 
-        let geojson = { type: 'FeatureCollection', features: allFeatures };
-
-        let layer = L.geoJSON(geojson, {
-            style: { color: '#e74c3c', weight: 3, opacity: 0.8, fillOpacity: 0.2 },
-            onEachFeature: function (feature, lyr) {
-                let label = [feature.properties.name, feature.properties._sourceFile].filter(Boolean).join(' — ');
-                if (label) lyr.bindPopup(label);
+        Promise.all(files.map(file =>
+            fetch(file.url)
+                .then(res => {
+                    if (!res.ok) throw new Error(file.name + ': HTTP ' + res.status);
+                    return extractKml(res, file.name);
+                })
+                .then(kmlText => {
+                    let geojson = kmlToGeoJSON(kmlText);
+                    // Tag each feature with its source file
+                    geojson.features.forEach(f => f.properties._sourceFile = file.display || file.name);
+                    allFeatures.push(...geojson.features);
+                })
+                .catch(err => errors.push(file.name + ': ' + err.message))
+        )).then(() => {
+            if (allFeatures.length === 0) {
+                alert('⚠️ No geometry found.' + (errors.length ? '\n\nErrors:\n' + errors.join('\n') : ''));
+                return;
             }
+
+            let geojson = { type: 'FeatureCollection', features: allFeatures };
+
+            let layer = L.geoJSON(geojson, {
+                style: { color: '#e74c3c', weight: 3, opacity: 0.8, fillOpacity: 0.2 },
+                onEachFeature: function (feature, lyr) {
+                    let label = [feature.properties.name, feature.properties._sourceFile].filter(Boolean).join(' — ');
+                    if (label) lyr.bindPopup(label);
+                }
+            });
+
+            layer.eachLayer(function (l) {
+                drawnItems.addLayer(l);
+            });
+
+            map.fitBounds(layer.getBounds(), { padding: [50, 50] });
+
+            let types = {};
+            allFeatures.forEach(f => types[f.geometry.type] = (types[f.geometry.type] || 0) + 1);
+            let desc = Object.entries(types).map(([k, v]) => v + ' ' + k + (v > 1 ? 's' : '')).join(', ');
+            let msg = '✅ Imported ' + allFeatures.length + ' feature(s) from ' + files.length + ' file(s):\n' + desc;
+            if (errors.length) msg += '\n\n⚠️ Errors:\n' + errors.join('\n');
+
+            alert(msg);
         });
-
-        layer.eachLayer(function (l) {
-            drawnItems.addLayer(l);
-        });
-
-        map.fitBounds(layer.getBounds(), { padding: [50, 50] });
-
-        let types = {};
-        allFeatures.forEach(f => types[f.geometry.type] = (types[f.geometry.type] || 0) + 1);
-        let desc = Object.entries(types).map(([k, v]) => v + ' ' + k + (v > 1 ? 's' : '')).join(', ');
-        let msg = '✅ Imported ' + allFeatures.length + ' feature(s) from ' + files.length + ' file(s):\n' + desc;
-        if (errors.length) msg += '\n\n⚠️ Errors:\n' + errors.join('\n');
-
-        alert(msg);
-    });
+    }
 };
 
 // --- ULAP CHECK LOGIC ---
@@ -1372,12 +1448,65 @@ window.PHAST.tickRecommendations = async function (category, page, ids) {
     return { ok: true, ticked, notFound: ids.filter(id => !ticked.includes(id)) };
 };
 
-// --- GET DRAWN GEOJSON (for EIL-Viz handoff) ---
-window.PHAST.getDrawnGeoJSON = function () {
-    if (typeof drawnItems === 'undefined') return null;
-    const geojson = drawnItems.toGeoJSON();
-    if (!geojson.features || geojson.features.length === 0) return null;
-    return JSON.stringify(geojson);
+// --- PARCELS FOR EIL-VIZ ---
+// EIL-Viz assesses one polygon. A request can carry several lots (several
+// KML/KMZ placemarks or hand-drawn shapes), so the panel lists the drawn
+// polygons and, when there's more than one, asks which to send, the way
+// "Overlay Vicinity Map" asks which attachment to use.
+window.PHAST.drawnParcels = function () {
+    if (typeof drawnItems === 'undefined') return [];
+    const parcels = [];
+    drawnItems.eachLayer(layer => {
+        if (!layer.toGeoJSON) return;
+        const feature = layer.toGeoJSON();
+        if (!feature.geometry || feature.geometry.type !== 'Polygon') return;
+        const props = feature.properties || {};
+        const label = [props.name, props._sourceFile].filter(Boolean).join(' (') + (props.name && props._sourceFile ? ')' : '');
+        parcels.push({
+            id: L.stamp(layer),
+            label: label || `Drawn polygon ${parcels.length + 1}`,
+            corners: feature.geometry.coordinates[0].length - 1,
+            geojson: JSON.stringify({ type: 'FeatureCollection', features: [feature] }),
+        });
+    });
+    // Two placemarks with the same name, or several unnamed drawn shapes,
+    // would otherwise read the same in the list.
+    const seen = {};
+    parcels.forEach(p => { seen[p.label] = (seen[p.label] || 0) + 1; });
+    const count = {};
+    parcels.forEach(p => { if (seen[p.label] > 1) { count[p.label] = (count[p.label] || 0) + 1; p.label += ` #${count[p.label]}`; } });
+    return parcels;
+};
+
+// Shows the choice over the map. Opening EIL-Viz happens here, on the
+// assessor's click in the page, so it works even if the popup closed when
+// the page got focus. Hovering an option highlights that polygon. Resolves
+// to { chosen: id } or { cancelled: true }.
+window.PHAST.chooseParcelForEIL = function (options) {
+    const layerOf = id => drawnItems.getLayers().find(l => L.stamp(l) === id);
+    const highlight = (i, on) => {
+        const layer = layerOf(options[i].id);
+        if (!layer || !layer.setStyle) return;
+        if (on) {
+            layer._phastStyle = layer._phastStyle || { color: layer.options.color, weight: layer.options.weight };
+            layer.setStyle({ color: '#f1c40f', weight: 6 });
+            if (layer.bringToFront) layer.bringToFront();
+        } else if (layer._phastStyle) {
+            layer.setStyle(layer._phastStyle);
+            delete layer._phastStyle;
+        }
+    };
+    return phastChoice({
+        title: 'Send which parcel to EIL-Viz?',
+        intro: 'EIL-Viz assesses one polygon at a time. Hover an option to see it on the map.',
+        options: options.map(o => ({ label: o.label, detail: o.corners + ' corners' })),
+        onHover: highlight,
+    }).then(choice => {
+        if (!choice) return { cancelled: true };
+        const opt = options[choice.index];
+        window.open(opt.url, '_blank');
+        return { chosen: opt.id };
+    });
 };
 
 // --- CENTER MAP TO COORDINATES ---

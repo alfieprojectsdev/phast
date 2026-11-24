@@ -30,11 +30,13 @@ PHAST also looks for request coordinates. It takes the first pair of DMS coordin
 These buttons call functions that PHAST injects into the page's own JavaScript context, so they work only on a page with the HAS Admin Leaflet map (`map`, `L` and `drawnItems` globals).
 
 - Overlay Vicinity Map finds image and PDF attachments on the request, prefers ones whose name or row mentions "vicinity", "site map" or "location map", and asks you to pick if there's more than one. Before anything goes on the map, a crop window shows the image: drag a rectangle over the part you want, or choose "Use whole image". The crop is cut from the full-resolution image. For a PDF, only page 1 is used, and the rectangle starts on the map image pasted into the page, so Word's white margins and any caption are already left out; if the page has no such image, it starts inside the white margins instead. The overlay can then be dragged, scaled, rotated, and stretched along either of its own axes with the edge handles. The control panel has an opacity slider, a blink toggle, nudge buttons and Remove Overlay. Running Overlay Vicinity Map again replaces the current overlay.
-- Import KML/KMZ fetches every KML and KMZ attached to the request, converts the placemarks to GeoJSON and adds them to the map's drawn layer, so they're also what "Send to EIL-Viz" sends.
+- Import KML/KMZ finds the KML and KMZ files attached to the request. With more than one, it asks which to import (or "Import all files"), the way Overlay Vicinity Map asks which image to use. It converts the chosen file's placemarks to GeoJSON and adds them to the map's drawn layer, so they're also what "Send to EIL-Viz" chooses from. Only the first KML inside a KMZ is read, and importing twice adds a second copy of every feature.
 - Check Feature in ULAP opens the ULAP portal in a new tab, centred on the coordinates in the first row of the assessment table.
 - Copy Coords / KMZ Link centres the map on the first DMS coordinates in a Remarks cell, or if there are none, imports the request's KML/KMZ. Despite the label it doesn't copy anything.
 
 "Send to EIL-Viz" takes the drawn or imported parcel polygon, checks that the EIL server is ready, and opens EIL-Viz in a new tab with the polygon base64-encoded after `#geo=`. Browsers don't send that part of a link to the server, so the parcel stays out of server and proxy logs. It still appears in your browser history. See [EIL server](#eil-server).
+
+EIL-Viz assesses one polygon at a time, so when the map has several (a multi-lot request, or a drawn shape beside an imported one), a list over the map asks which to send. Each option shows the placemark name and source file (or "Drawn polygon N"), numbered when two read the same, with its corner count, and hovering one highlights that polygon. Points and lines are never sent. Both lists close with Cancel, Escape or a click outside them.
 
 ### Report tab
 
